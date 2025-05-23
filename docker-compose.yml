@@ -1,0 +1,37 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15-oss
+    container_name: timescaledb_service
+    ports:
+      - "${PG_PORT_HOST}:${PG_PORT_CONTAINER}" # e.g., 5433:5432, defined in .env
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    networks:
+      - sentiment_net
+
+#  reddit_scraper:
+#    build:
+#      context: ./reddit_scraper
+#      dockerfile: Dockerfile
+#    container_name: reddit_scraper_service
+#    depends_on:
+#      - timescaledb
+#    env_file:
+#      - .env
+#    volumes:
+#      - ./reddit_scraper:/app/reddit_scraper
+#      - ./scraper_logs:/app/logs  # Example for persisting logs
+#    networks:
+#      - sentiment_net
+#    # Add other necessary configurations like command, entrypoint, etc.
+
+volumes:
+  timescaledb_data:
+
+networks:
+  sentiment_net:
+    driver: bridge

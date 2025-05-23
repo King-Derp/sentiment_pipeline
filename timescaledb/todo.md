@@ -7,45 +7,45 @@ This document outlines the step-by-step tasks required to implement TimescaleDB 
 
 ## Phase 1: Project Setup & Alembic Initialization
 
--   [ ] **1.1. Finalize Docker Compose for TimescaleDB Service**
-    -   [ ] Ensure `docker-compose.yml` correctly defines the `timescaledb` service.
-    -   [ ] Mount a named volume for data persistence (e.g., `timescaledb_data:/var/lib/postgresql/data`).
-    -   [ ] Expose port `5432`.
-    -   [ ] Configure necessary environment variables (from `.env`) for `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
--   [ ] **1.2. Setup Project-Level `.env` File**
-    -   [ ] Define `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DB` for use by services and Alembic.
+-   [x] **1.1. Finalize Docker Compose for TimescaleDB Service**
+    -   [x] Ensure `docker-compose.yml` correctly defines the `timescaledb` service.
+    -   [x] Mount a named volume for data persistence (e.g., `timescaledb_data:/var/lib/postgresql/data`).
+    -   [x] Expose port `5432`.
+    -   [x] Configure necessary environment variables (from `.env`) for `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
+-   [x] **1.2. Setup Project-Level `.env` File**
+    -   [x] Define `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DB` for use by services and Alembic.
     -   [ ] Ensure `.env.example` is up-to-date.
--   [ ] **1.3. Initialize Alembic for Database Migrations**
-    -   [ ] Install Alembic (`pip install alembic sqlalchemy psycopg2-binary`).
-    -   [ ] Run `alembic init alembic` in the project root to create the `alembic` directory and `alembic.ini`.
--   [ ] **1.4. Configure Alembic (`alembic.ini` and `alembic/env.py`)**
-    -   [ ] In `alembic.ini`, set `sqlalchemy.url` to read from environment variables (e.g., `postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}`).
-    -   [ ] In `alembic/env.py`:
-        -   [ ] Import necessary SQLAlchemy models (e.g., from `reddit_scraper.src.models` or a central models location if created).
-        -   [ ] Set `target_metadata` to your SQLAlchemy `MetaData` object (e.g., `target_metadata = Base.metadata`).
-        -   [ ] Ensure `env.py` can construct the database URL from environment variables for the context.
--   [ ] **1.5. Define SQLAlchemy Models (if not already complete)**
-    -   [ ] Ensure `SubmissionORM` (and any other relevant models) are correctly defined with SQLAlchemy, including appropriate data types and table names (e.g., `raw_submissions`). These models will be used by Alembic to autogenerate migration scripts.
+-   [x] **1.3. Initialize Alembic for Database Migrations**
+    -   [x] Install Alembic (`pip install alembic sqlalchemy psycopg2-binary`).
+    -   [x] Run `alembic init alembic` in the project root to create the `alembic` directory and `alembic.ini`.
+-   [x] **1.4. Configure Alembic (`alembic.ini` and `alembic/env.py`)**
+    -   [x] In `alembic.ini`, set `sqlalchemy.url` to read from environment variables (e.g., `postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}`).
+    -   [x] In `alembic/env.py`:
+        -   [x] Import necessary SQLAlchemy models (e.g., from `reddit_scraper.src.models` or a central models location if created).
+        -   [x] Set `target_metadata` to your SQLAlchemy `MetaData` object (e.g., `target_metadata = Base.metadata`).
+        -   [x] Ensure `env.py` can construct the database URL from environment variables for the context.
+-   [x] **1.5. Define SQLAlchemy Models (if not already complete)**
+    -   [x] Ensure `SubmissionORM` (and any other relevant models) are correctly defined with SQLAlchemy, including appropriate data types and table names (e.g., `raw_submissions`). These models will be used by Alembic to autogenerate migration scripts.
 
 ## Phase 2: Initial Schema Migration with Alembic
 
--   [ ] **2.1. Create First Alembic Migration Script (Autogenerate)**
-    -   [ ] With Alembic configured and models defined, generate the initial migration script: `alembic revision -m "create_initial_schema_and_hypertable" --autogenerate`.
-    -   [ ] Review the generated script in `alembic/versions/`.
--   [ ] **2.2. Edit Migration Script for TimescaleDB Specifics**
-    -   [ ] In the generated migration script, add commands for:
-        -   [ ] Enabling the TimescaleDB extension: `op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")` (in the `upgrade` function).
-        -   [ ] Creating the hypertable: `op.execute("SELECT create_hypertable('raw_submissions', 'created_utc', chunk_time_interval => 86400, if_not_exists => TRUE);")` (after table creation in `upgrade`).
-        -   [ ] Add corresponding `DROP TABLE` and potentially `DROP EXTENSION` (if appropriate) in the `downgrade` function.
-    -   [ ] Ensure necessary indexes (e.g., on `created_utc`, `id`, `subreddit`) are also created via `op.create_index()`.
--   [ ] **2.3. Apply the Initial Migration**
-    -   [ ] Ensure the TimescaleDB service is running (`docker-compose up -d timescaledb`).
-    -   [ ] Run the migration: `docker-compose exec <your_service_with_alembic> alembic upgrade head` (e.g., `reddit_scraper` or a dedicated Alembic service).
--   [ ] **2.4. Verify Schema and Hypertable in DB**
-    -   [ ] Connect to TimescaleDB (e.g., via `docker-compose exec timescaledb psql ...`).
-    -   [ ] Verify table `raw_submissions` exists (`\dt`).
-    -   [ ] Verify TimescaleDB extension is active (`\dx`).
-    -   [ ] Verify `raw_submissions` is a hypertable (`SELECT * FROM timescaledb_information.hypertables;`).
+-   [x] **2.1. Create First Alembic Migration Script (Autogenerate)**
+    -   [x] With Alembic configured and models defined, generate the initial migration script: `alembic revision -m "create_initial_schema_and_hypertable" --autogenerate`.
+    -   [x] Review the generated script in `alembic/versions/`.
+-   [x] **2.2. Edit Migration Script for TimescaleDB Specifics**
+    -   [x] In the generated migration script, add commands for:
+        -   [x] Enabling the TimescaleDB extension: `op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")` (in the `upgrade` function).
+        -   [x] Creating the hypertable: `op.execute("SELECT create_hypertable('raw_submissions', 'created_utc', chunk_time_interval => 604800, if_not_exists => TRUE);")` (after table creation in `upgrade`).  *Note: Implemented with 7-day interval (604800s).*
+        -   [x] Add corresponding `DROP TABLE` and potentially `DROP EXTENSION` (if appropriate) in the `downgrade` function.
+    -   [x] Ensure necessary indexes (e.g., on `created_utc`, `id`, `subreddit`) are also created via `op.create_index()`.
+-   [x] **2.3. Apply the Initial Migration**
+    -   [x] Ensure the TimescaleDB service is running (`docker-compose up -d timescaledb`).
+    -   [x] Run the migration: `alembic upgrade head`.
+-   [x] **2.4. Verify Schema and Hypertable in DB**
+    -   [x] Connect to TimescaleDB (e.g., via `docker exec timescaledb_service psql ...`).
+    -   [x] Verify table `raw_submissions` exists (`\dt`).
+    -   [x] Verify TimescaleDB extension is active (`\dx`).
+    -   [x] Verify `raw_submissions` is a hypertable (`SELECT * FROM timescaledb_information.hypertables;`).
 
 ## Phase 3: Scraper Integration with Alembic-Managed Schema
 
