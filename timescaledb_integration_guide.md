@@ -21,7 +21,7 @@ Key environment variables required by a scraper to connect to TimescaleDB are:
 *   `PG_PASSWORD`: The password for the `PG_USER`.
 *   `PG_DB`: The name of the PostgreSQL database to connect to.
 
-These variables should be defined in the scraper's specific `.env` file (e.g., `reddit_scraper/.env`) and loaded by the scraper application at runtime.
+These variables should be defined in an environment file (e.g., `scraper.env` at the project root) that is then loaded by the `docker-compose.yml` for the specific scraper service. The scraper application should be written to load these variables at runtime.
 
 ## 3. Constructing the SQLAlchemy Connection String
 

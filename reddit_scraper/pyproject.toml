@@ -20,6 +20,7 @@ prometheus-client = "^0.17.1"
 python-dateutil = "^2.8.2"
 psycopg2-binary = "^2.9.9"
 sqlalchemy = "^2.0.27"
+alembic = "^1.13.1"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.10.0"

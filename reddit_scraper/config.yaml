@@ -57,11 +57,10 @@ postgres:
   # Enable PostgreSQL storage
   enabled: true
   # PostgreSQL connection settings (can be overridden by environment variables)
-  host: pgbouncer
-  port: 6432  # PgBouncer port
-  dbname: marketdb
-  user: market_user
+  host: timescaledb
+  port: 5432
+  dbname: sentiment_pipeline_db
+  user: test_user
   password: ${PG_PASSWORD}  # Use environment variable instead of hardcoded password
   # SQLAlchemy settings
   use_sqlalchemy: true
-

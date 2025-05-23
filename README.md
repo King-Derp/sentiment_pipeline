@@ -111,16 +111,17 @@ This project uses `.env` files to manage configuration and secrets. Example file
     Edit `.env` and set your desired `PG_USER`, `PG_PASSWORD`, and `PG_DB` for the TimescaleDB instance.
 
 2.  **Reddit Scraper Environment (`scraper.env`):**
-    This file configures the `reddit_scraper` service, including database connection details and Reddit API credentials.
+    This file configures the `reddit_scraper` service, primarily for its **Reddit API credentials** and the **database connection details it needs when running inside its Docker container** (to connect to the `timescaledb` service).
     ```bash
     cp scraper.env.example scraper.env
     ```
     Edit `scraper.env`:
-    *   Ensure `PG_HOST` is set to `timescaledb` (the service name in `docker-compose.yml`).
-    *   Match `PG_DB`, `PG_USER`, `PG_PASSWORD` with the values you set in the root `.env` file for TimescaleDB.
-    *   Fill in your Reddit API credentials (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, etc.).
-
-*(Note: `.env.example` and `scraper.env.example` will need to be created if they don't exist yet. They should list all required variables with placeholder or default values.)*
+    *   Fill in your `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`, and `REDDIT_USER_AGENT`.
+    *   Ensure `PG_HOST` is set to `timescaledb` (the service name of the TimescaleDB container).
+    *   Ensure `PG_PORT` is set to `5432`.
+    *   Ensure `PG_USER`, `PG_PASSWORD`, and `PG_DB` match the values you set in the main `.env` file (e.g., `test_user`, `test_password`, `sentiment_pipeline_db`). These are used by the scraper application and Alembic when run from the scraper's container.
+    *   `LOG_LEVEL` can also be set here to override application defaults.
+    *   Operational parameters like the list of subreddits to scrape are primarily managed in `reddit_scraper/config.yaml`.
 
 ### 3. Build and Run with Docker Compose
 
@@ -151,8 +152,9 @@ This section outlines the steps to initialize the TimescaleDB instance and apply
 
 **Prerequisites:**
 
-*   The TimescaleDB Docker container (service name `timescaledb` in `docker-compose.yml`) is running.
-*   Docker and Docker Compose are installed.
+*   Ensure Docker and Docker Compose are running.
+*   The TimescaleDB service (`timescaledb`) should be running. You can start it with: `docker-compose up -d timescaledb` and wait a moment for it to initialize.
+*   Your `scraper.env` file must be correctly populated with database credentials (`PG_HOST=timescaledb`, `PG_PORT=5432`, `PG_USER`, `PG_PASSWORD`, `PG_DB`) as these will be used by Alembic running inside the `reddit_scraper` container.
 
 **Steps:**
 
@@ -197,9 +199,9 @@ This Alembic-driven setup ensures that your database schema is version-controlle
 
 ## Usage
 
--   Once running, the `reddit_scraper` will automatically start fetching data based on its configuration (see `scraper.env` and `reddit_scraper/config.yaml` if applicable).
+-   Once running, the `reddit_scraper` will automatically start fetching data based on its configuration. Secrets and Docker-internal database connection details are sourced from `scraper.env`. Operational parameters (like subreddits to scrape) and the application's database connection configuration are primarily managed by `reddit_scraper/config.yaml` (which we've aligned to use the details from `scraper.env`).
 -   Data will be stored in the `timescaledb` service.
--   You can connect to TimescaleDB using any PostgreSQL client (e.g., DBeaver, pgAdmin, `psql`) to inspect the data, using the credentials and port (`localhost:5432`) configured.
+-   You can connect to TimescaleDB using any PostgreSQL client (e.g., DBeaver, pgAdmin, `psql`) to inspect the data, using the credentials and port (`localhost:5433` as per your root `.env` file) configured for external access.
 
 To stop the application:
 ```bash

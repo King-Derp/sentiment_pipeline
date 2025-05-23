@@ -13,21 +13,22 @@ services:
     networks:
       - sentiment_net
 
-#  reddit_scraper:
-#    build:
-#      context: ./reddit_scraper
-#      dockerfile: Dockerfile
-#    container_name: reddit_scraper_service
-#    depends_on:
-#      - timescaledb
-#    env_file:
-#      - .env
-#    volumes:
-#      - ./reddit_scraper:/app/reddit_scraper
-#      - ./scraper_logs:/app/logs  # Example for persisting logs
-#    networks:
-#      - sentiment_net
-#    # Add other necessary configurations like command, entrypoint, etc.
+  reddit_scraper:
+    build:
+      context: ./reddit_scraper
+      dockerfile: Dockerfile
+    container_name: reddit_scraper_service
+    depends_on:
+      timescaledb:
+        condition: service_healthy # Or simply service_started if healthcheck not defined for timescaledb
+    env_file:
+      - ./scraper.env # Ensure this file is created from scraper.env.example
+    volumes:
+      - ./reddit_scraper:/app/reddit_scraper # For development: mounts local code into container
+      - ./scraper_logs:/app/logs
+    networks:
+      - sentiment_net
+    # The Dockerfile's ENTRYPOINT and CMD will be used unless overridden here
 
 volumes:
   timescaledb_data:
