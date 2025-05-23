@@ -1,0 +1,5 @@
+REDDIT_CLIENT_ID=test_client_id
+REDDIT_CLIENT_SECRET=test_client_secret
+REDDIT_USERNAME=test_username
+REDDIT_PASSWORD=test_password
+REDDIT_USER_AGENT=test_user_agent

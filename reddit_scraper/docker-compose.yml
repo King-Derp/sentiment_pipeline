@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  reddit-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reddit-finance-scraper
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    # Keep container running even if the process exits
+    tty: true
+    # Make sure the container doesn't stop on signal
+    init: true
+    # Ensure container stays alive
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    environment:
+      - PG_HOST=market_pgbouncer  # Updated to use the correct PgBouncer service name
+      - PG_PORT=6432  # PgBouncer port
+      - PG_DB=marketdb
+      - PG_USER=market_user
+      - PG_PASSWORD=${PG_PASSWORD}  # Use environment variable from .env file
+      - USE_POSTGRES=true
+      - USE_SQLALCHEMY=true  # Enable SQLAlchemy ORM and connection pooling
+      - LOGLEVEL=DEBUG
+    networks:
+      - default
+      - market_backend  # Updated to use the correct network
+    healthcheck:
+      test: ["CMD", "python", "-m", "reddit_scraper.cli", "metrics"]
+      interval: 5m
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    command: ["scrape", "--daemon", "--config", "config.yaml", "--loglevel", "DEBUG"]
+
+networks:
+  default:
+  market_backend:
+    external: true

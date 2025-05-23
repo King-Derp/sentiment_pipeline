@@ -1,0 +1,67 @@
+# Reddit Finance Scraper Configuration
+
+# List of subreddits to scrape
+subreddits:
+  - wallstreetbets
+  - stocks
+  - investing
+  - StockMarket
+  - options
+  - finance
+  - UKInvesting
+  - Banking
+  - CryptoCurrency
+
+# Historic search window in days
+window_days: 30
+
+# Path to CSV storage file
+csv_path: data/reddit_finance.csv
+
+# Whether to perform initial backfill on startup
+initial_backfill: true
+
+# Number of consecutive 5xx errors before aborting
+failure_threshold: 5
+
+# Interval in seconds between maintenance runs
+maintenance_interval_sec: 61
+
+# Minimum time gap in seconds to trigger auto-backfill (10 minutes)
+auto_backfill_gap_threshold_sec: 600
+
+# Rate limiting settings
+rate_limit:
+  # Maximum requests per minute
+  max_requests_per_minute: 100
+  # Minimum remaining calls before sleeping
+  min_remaining_calls: 5
+  # Additional seconds to add to reset time
+  sleep_buffer_sec: 2
+
+# Monitoring settings
+monitoring:
+  # Enable Prometheus metrics
+  enable_prometheus: true
+  # Port for Prometheus metrics server
+  prometheus_port: 8000
+  # Alert thresholds
+  alerts:
+    # Maximum age of latest fetch in seconds (20 minutes)
+    max_fetch_age_sec: 1200
+    # Maximum disk usage percentage for CSV
+    max_disk_usage_percent: 90
+
+# PostgreSQL settings
+postgres:
+  # Enable PostgreSQL storage
+  enabled: true
+  # PostgreSQL connection settings (can be overridden by environment variables)
+  host: pgbouncer
+  port: 6432  # PgBouncer port
+  dbname: marketdb
+  user: market_user
+  password: ${PG_PASSWORD}  # Use environment variable instead of hardcoded password
+  # SQLAlchemy settings
+  use_sqlalchemy: true
+

@@ -1,0 +1,38 @@
+# Environment variables
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data and logs
+data/
+logs/
+*.csv
+*.log
+
+# Temporary files
+.DS_Store
+Thumbs.db
+
+#postgres_implementation_plan.md
