@@ -16,28 +16,33 @@ from sqlalchemy.dialects.postgresql import insert
 
 from reddit_scraper.models.submission import SubmissionRecord
 from reddit_scraper.storage.database import get_db, RawEvent, init_db
+from reddit_scraper.config import PostgresConfig
 
 logger = logging.getLogger(__name__)
 
 class SQLAlchemyPostgresSink:
     """PostgreSQL sink for storing submission records using SQLAlchemy ORM."""
     
-    def __init__(self):
+    def __init__(self, pg_config: PostgresConfig):
         """
         Initialize SQLAlchemy PostgreSQL sink.
         
         Sets up connection to PostgreSQL and ensures schema exists.
+        
+        Args:
+            pg_config: PostgreSQL configuration object.
         """
         # Log initialization with high visibility
         logger.warning("========== SQLALCHEMY POSTGRES SINK INITIALIZATION START ==========")
+        logger.info(f"Initializing SQLAlchemyPostgresSink with host: {pg_config.host}, db: {pg_config.database}")
         
-        # Verify database connection and schema
-        if not init_db():
-            logger.error("POSTGRES ERROR: Failed to initialize SQLAlchemy database connection")
+        # Verify database connection and schema by calling the modified init_db
+        if not init_db(pg_config):
+            logger.error("POSTGRES ERROR: Failed to initialize SQLAlchemy database connection via init_db")
             logger.warning("========== SQLALCHEMY POSTGRES SINK INITIALIZATION FAILED ==========")
             raise RuntimeError("Failed to initialize SQLAlchemy database connection")
         
-        logger.warning("POSTGRES: Database connection and schema verification successful")
+        logger.warning("POSTGRES: Database connection and schema verification successful via init_db")
         logger.warning("========== SQLALCHEMY POSTGRES SINK INITIALIZATION COMPLETE ==========")
     
     def append(self, records: List[SubmissionRecord]) -> int:

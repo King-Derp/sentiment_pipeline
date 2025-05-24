@@ -1,3 +1,5 @@
+print("DEBUG: cli.py TOP LEVEL EXECUTION", flush=True)
+
 """Command-line interface for the Reddit Finance Scraper."""
 
 import asyncio
@@ -21,11 +23,13 @@ from reddit_scraper.collector.collector import SubmissionCollector
 from reddit_scraper.collector.error_handler import ConsecutiveErrorTracker
 from reddit_scraper.collector.maintenance import MaintenanceRunner
 from reddit_scraper.collector.rate_limiter import RateLimiter
-from reddit_scraper.config import Config
+from reddit_scraper.config import Config, PostgresConfig
 from reddit_scraper.monitoring.metrics import PrometheusExporter
 from reddit_scraper.reddit_client import RedditClient
 from reddit_scraper.storage.csv_sink import CsvSink
 from reddit_scraper.storage.composite_sink import CompositeSink
+from reddit_scraper.storage.postgres_sink import PostgresSink
+from reddit_scraper.storage.sqlalchemy_postgres_sink import SQLAlchemyPostgresSink
 
 # Import scraper classes
 from reddit_scraper.base_scraper import BaseScraper
@@ -34,17 +38,32 @@ from reddit_scraper.scrapers.deep_historical_scraper import DeepHistoricalScrape
 from reddit_scraper.scrapers.hybrid_historical_scraper import HybridHistoricalScraper
 from reddit_scraper.scrapers.pushshift_historical_scraper import PushshiftHistoricalScraper
 
+print("DEBUG: cli.py before app = typer.Typer()", flush=True)
 app = typer.Typer(help="Reddit Finance Scraper - Collect submissions from finance subreddits")
+print("DEBUG: cli.py after app = typer.Typer()", flush=True)
+
 logger = logging.getLogger(__name__)
 
 # Create subcommands for different scraper types
 # Note: Most historical scrapers are deprecated except for the targeted scraper
+print("DEBUG: cli.py before scraper_app = typer.Typer()", flush=True)
 scraper_app = typer.Typer(help="Specialized scrapers for historical data collection")
+print("DEBUG: cli.py after scraper_app = typer.Typer()", flush=True)
+
+print("DEBUG: cli.py before app.add_typer(scraper_app)", flush=True)
 app.add_typer(scraper_app, name="scraper")
+print("DEBUG: cli.py after app.add_typer(scraper_app)", flush=True)
+
 
 # Import and include database management commands
+print("DEBUG: cli.py before from reddit_scraper.cli_db import app as db_app", flush=True)
 from reddit_scraper.cli_db import app as db_app
+print("DEBUG: cli.py after from reddit_scraper.cli_db import app as db_app", flush=True)
+
+print("DEBUG: cli.py before app.add_typer(db_app)", flush=True)
 app.add_typer(db_app, name="db", help="Manage PostgreSQL database")
+print("DEBUG: cli.py after app.add_typer(db_app)", flush=True)
+
 
 # Global reference to the maintenance runner for signal handling
 _maintenance_runner = None
@@ -158,10 +177,29 @@ async def run_scraper(
     
     # Create components
     # Use CompositeSink to enable both CSV and PostgreSQL storage
-    use_postgres = os.environ.get('USE_POSTGRES', 'false').lower() in ('true', '1', 'yes')
-    data_sink = CompositeSink(config.csv_path, use_postgres=use_postgres)
-    logger.info(f"Using {'PostgreSQL and ' if use_postgres else ''}CSV storage")
+    sinks = [CsvSink(config.csv_path)] # Always include CSVSink
     
+    if config.postgres and config.postgres.enabled:
+        try:
+            if config.postgres.use_sqlalchemy:
+                logger.info("Using SQLAlchemy PostgreSQL sink.")
+                pg_sink = SQLAlchemyPostgresSink(config.postgres)
+            else:
+                logger.info("Using direct connection PostgreSQL sink.")
+                pg_sink = PostgresSink(config.postgres)
+            sinks.append(pg_sink)
+            logger.info("PostgreSQL sink enabled and initialized.")
+        except Exception as e:
+            logger.error(f"Failed to initialize PostgreSQL sink: {e}. Proceeding with CSV sink only.")
+    else:
+        logger.info("PostgreSQL sink is not enabled in the configuration.")
+        
+    data_sink = CompositeSink(sinks)
+    # logger.info(f"Using {'PostgreSQL and ' if use_postgres else ''}CSV storage") # Old logging
+    
+    active_sinks_names = [type(s).__name__ for s in data_sink.sinks]
+    logger.info(f"Data will be written to: {', '.join(active_sinks_names)}")
+
     reddit_client = RedditClient(config)
     rate_limiter = RateLimiter(config.rate_limit)
     error_tracker = ConsecutiveErrorTracker(config.failure_threshold)
@@ -275,6 +313,7 @@ def scrape(
     
     Run in one-shot mode for backfill or daemon mode for continuous updates.
     """
+    print("DEBUG: scrape command started.", flush=True)
     # Set up logging
     log_level = "DEBUG" if verbose else loglevel
     setup_logging(log_level)
@@ -602,6 +641,7 @@ def prometheus_server(
 
 def main() -> None:
     """Entry point for the CLI."""
+    print("DEBUG: main function started.", flush=True)
     app()
 
 

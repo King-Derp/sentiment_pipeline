@@ -45,6 +45,7 @@ class PostgresConfig:
     user: str = "postgres"
     password: str = ""
     enabled: bool = True
+    use_sqlalchemy: bool = False
     
     # Alias for database to handle config files that use 'dbname' instead
     @property
@@ -179,15 +180,23 @@ class Config:
                         current_user = getattr(current_postgres, "user", "postgres")
                         current_password = getattr(current_postgres, "password", "")
                         current_enabled = getattr(current_postgres, "enabled", True)
-                        
+                        current_use_sqlalchemy = getattr(current_postgres, "use_sqlalchemy", False)
+
+                        # Get password from YAML, substituting ${PG_PASSWORD} if present
+                        yaml_password = postgres_dict.get("password", current_password)
+                        if yaml_password == "${PG_PASSWORD}":
+                            yaml_password = os.getenv("PG_PASSWORD", current_password)
+                            # If PG_PASSWORD is not set in env, it will fall back to current_password (which might be from initial env load or default)
+
                         # Create a new PostgresConfig with the combined values
                         config.postgres = PostgresConfig(
                             host=postgres_dict.get("host", current_host),
                             port=postgres_dict.get("port", current_port),
                             database=postgres_dict.get("database", current_database),
                             user=postgres_dict.get("user", current_user),
-                            password=postgres_dict.get("password", current_password),
-                            enabled=postgres_dict.get("enabled", current_enabled)
+                            password=yaml_password,  # Use the substituted password
+                            enabled=postgres_dict.get("enabled", current_enabled),
+                            use_sqlalchemy=postgres_dict.get("use_sqlalchemy", current_use_sqlalchemy)
                         )
 
         # Ensure CSV directory exists

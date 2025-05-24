@@ -49,9 +49,10 @@ This document outlines the step-by-step tasks required to implement TimescaleDB 
 
 ## Phase 3: Scraper Integration with Alembic-Managed Schema
 
--   [ ] **3.1. Update Scraper DB Connection Logic**
-    -   [ ] Ensure scraper(s) use the environment variables (`PG_HOST`, etc.) to connect to TimescaleDB, as detailed in `timescaledb_integration_guide.md`.
-    -   [ ] **Crucially**: Remove any `metadata.create_all()` calls from scraper code related to the TimescaleDB sink. Scrapers should assume tables exist.
+-   [x] **3.1. Update Scraper DB Connection Logic**
+    -   [x] Ensure scraper(s) use the environment variables (`PG_HOST`, etc.) via a centralized `PostgresConfig` object to connect to TimescaleDB, as detailed in `timescaledb_integration_guide.md`.
+        -   *Note (2025-05-23): Refactored `storage/db.py`, `storage/postgres_sink.py`, and `cli.py` to achieve this. `PostgresSink` now takes `PostgresConfig`, uses correct table `raw_submissions`, and aligns with Alembic-managed schema.* 
+    -   [x] **Crucially**: Remove any `metadata.create_all()` calls from scraper code related to the TimescaleDB sink. Scrapers should assume tables exist. *(Achieved by refactoring `PostgresSink` not to manage schema)*
 -   [ ] **3.2. Test Scraper Data Ingestion**
     -   [ ] Run the scraper service.
     -   [ ] Verify data is being written to `raw_submissions` in TimescaleDB.

@@ -12,6 +12,12 @@ services:
       - timescaledb_data:/var/lib/postgresql/data
     networks:
       - sentiment_net
+    healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB} -h localhost -p ${PG_PORT_CONTAINER}"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 10s
 
   reddit_scraper:
     build:
@@ -26,6 +32,7 @@ services:
     volumes:
       - ./reddit_scraper:/app/reddit_scraper # For development: mounts local code into container
       - ./scraper_logs:/app/logs
+      - ./data:/app/data  # Persist CSV data on host
     networks:
       - sentiment_net
     # The Dockerfile's ENTRYPOINT and CMD will be used unless overridden here

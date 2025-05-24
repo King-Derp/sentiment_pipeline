@@ -12,7 +12,7 @@ from typing_extensions import Annotated
 import psycopg2
 
 from reddit_scraper.config import Config
-from reddit_scraper.storage.db import get_connection, ensure_schema, ensure_partition
+from reddit_scraper.storage.db import get_connection, ensure_schema
 from reddit_scraper.storage.db_migration import (
     create_partition,
     create_partitions_for_range,
@@ -78,15 +78,15 @@ def test_connection(
             logger.error("Failed to ensure database schema")
             sys.exit(1)
             
-        # Check for today's partition
-        today = datetime.date.today()
-        day_str = today.strftime('%Y_%m_%d')
-        
-        if ensure_partition(conn, day_str):
-            logger.info(f"✓ Partition for today ({day_str}) exists")
-        else:
-            logger.error(f"Failed to ensure partition for today ({day_str})")
-            sys.exit(1)
+        # Check for today's partition (Commented out as ensure_partition is not available/relevant for raw_submissions hypertable)
+        # today = datetime.date.today()
+        # day_str = today.strftime('%Y_%m_%d')
+        # 
+        # if ensure_partition(conn, day_str):
+        #     logger.info(f"✓ Partition for today ({day_str}) exists")
+        # else:
+        #     logger.error(f"Failed to ensure partition for today ({day_str})")
+        #     sys.exit(1)
             
         # Check permissions by writing a test record
         try:

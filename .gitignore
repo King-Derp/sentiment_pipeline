@@ -137,3 +137,5 @@ logs/
 
 # TimescaleDB Docker volume data (if mapped locally outside Docker volumes)
 # timescaledb_data/
+
+/data

@@ -5,18 +5,18 @@ import os
 from typing import List, Set, Optional
 
 from reddit_scraper.models.submission import SubmissionRecord
-from reddit_scraper.storage.csv_sink import CsvSink
+from reddit_scraper.storage.csv_sink import CsvSink, DataSink
+from reddit_scraper.storage.sqlalchemy_postgres_sink import SQLAlchemyPostgresSink as PostgresSink
+from reddit_scraper.storage.postgres_sink import PostgresSink as LegacyPostgresSink
 
 # Import the appropriate PostgreSQL sink based on configuration
 # Default to the new SQLAlchemy-based sink
 USE_SQLALCHEMY = os.environ.get("USE_SQLALCHEMY", "true").lower() in ("true", "1", "yes")
 
 if USE_SQLALCHEMY:
-    from reddit_scraper.storage.sqlalchemy_postgres_sink import SQLAlchemyPostgresSink as PostgresSink
     logger = logging.getLogger(__name__)
     logger.warning("Using SQLAlchemy-based PostgreSQL sink with connection pooling")
 else:
-    from reddit_scraper.storage.postgres_sink import PostgresSink
     logger = logging.getLogger(__name__)
     logger.warning("Using legacy PostgreSQL sink without connection pooling")
 
@@ -31,68 +31,35 @@ class CompositeSink:
     but delegates operations to all configured sinks.
     """
     
-    def __init__(self, csv_path: str, use_postgres: bool = False):
+    def __init__(self, configured_sinks: List[DataSink]):
         """
-        Initialize the composite storage sink.
+        Initialize the composite storage sink with pre-configured sink instances.
         
         Args:
-            csv_path: Path to CSV file
-            use_postgres: Whether to use PostgreSQL storage
+            configured_sinks: A list of already initialized DataSink objects.
         """
-        # Add detailed logging for initialization
-        logger.info(f"Initializing CompositeSink with csv_path={csv_path}, use_postgres={use_postgres}")
+        logger.info(f"Initializing CompositeSink with {len(configured_sinks)} pre-configured sinks.")
         
-        self.sinks = []
+        self.sinks: List[DataSink] = configured_sinks
         
-        # Always add CSV sink as primary
-        self.csv_sink = CsvSink(csv_path)
-        self.sinks.append(self.csv_sink)
-        logger.info("CSV sink added as primary storage")
-        
-        # Optionally add PostgreSQL sink
-        self.postgres_sink = None
-        if use_postgres:
-            logger.warning("========== POSTGRESQL ENABLED ==========")
-            logger.warning("Attempting to initialize PostgreSQL sink...")
-            try:
-                # Log environment variables for debugging
-                import os
-                pg_env_vars = {
-                    "POSTGRES_HOST": os.environ.get("POSTGRES_HOST", "[NOT SET]"),
-                    "POSTGRES_PORT": os.environ.get("POSTGRES_PORT", "[NOT SET]"),
-                    "POSTGRES_DB": os.environ.get("POSTGRES_DB", "[NOT SET]"),
-                    "POSTGRES_USER": os.environ.get("POSTGRES_USER", "[NOT SET]"),
-                    "POSTGRES_PASSWORD": "[MASKED]" if os.environ.get("POSTGRES_PASSWORD") else "[NOT SET]",
-                    "PG_HOST": os.environ.get("PG_HOST", "[NOT SET]"),
-                    "PG_PORT": os.environ.get("PG_PORT", "[NOT SET]"),
-                    "PG_DB": os.environ.get("PG_DB", "[NOT SET]"),
-                    "PG_USER": os.environ.get("PG_USER", "[NOT SET]"),
-                    "PG_PASSWORD": "[MASKED]" if os.environ.get("PG_PASSWORD") else "[NOT SET]",
-                    "USE_POSTGRES": os.environ.get("USE_POSTGRES", "[NOT SET]")
-                }
-                logger.warning(f"PostgreSQL environment variables: {pg_env_vars}")
-                
-                # Initialize the appropriate PostgreSQL sink based on configuration
-                self.postgres_sink = PostgresSink()
-                
-                sink_type = "SQLAlchemy" if USE_SQLALCHEMY else "Legacy"
-                logger.warning(f"{sink_type} PostgreSQL sink initialized successfully!")
-                
-                self.sinks.append(self.postgres_sink)
-                logger.warning("PostgreSQL sink added to active sinks")
-                
-                if USE_SQLALCHEMY:
-                    logger.warning("Using connection pooling for better performance")
-                
-                logger.warning("========== POSTGRESQL SETUP COMPLETE ==========")
-            except Exception as e:
-                logger.error(f"Failed to initialize PostgreSQL sink: {str(e)}")
-                logger.error("PostgreSQL initialization error details:", exc_info=True)
-                logger.warning("Continuing with CSV storage only")
-        else:
-            logger.warning("========== POSTGRESQL DISABLED ==========")
-            logger.warning("PostgreSQL storage is DISABLED by configuration! To enable, check 'postgres.enabled' in config.yaml")
-    
+        self.csv_sink: Optional[CsvSink] = None
+        self.postgres_sink: Optional[PostgresSink] = None 
+
+        for sink in self.sinks:
+            if isinstance(sink, CsvSink):
+                self.csv_sink = sink
+                logger.info(f"Identified CsvSink, path: {getattr(sink, 'csv_path', 'N/A')}")
+            # PostgresSink is an alias, so this will catch both types
+            elif isinstance(sink, (PostgresSink, LegacyPostgresSink)):
+                self.postgres_sink = sink
+                sink_type = "SQLAlchemyPostgresSink" if USE_SQLALCHEMY else "PostgresSink (legacy)"
+                logger.info(f"Identified {sink_type}.")
+
+        if not self.sinks:
+            logger.warning("CompositeSink initialized with no data sinks.")
+        elif not self.csv_sink:
+             logger.warning("CompositeSink does not have a CsvSink. Ensure at least one sink is primary or handling is adjusted.")
+
     def append(self, records: List[SubmissionRecord]) -> int:
         """
         Append records to all configured storage backends.

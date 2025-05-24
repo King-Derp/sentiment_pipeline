@@ -212,6 +212,19 @@ To stop and remove volumes (deletes all database data!):
 docker-compose down -v
 ```
 
+## Project Documentation
+
+Key project documentation includes:
+
+*   **`PLANNING.md`**: (If present at root) Detailed project plan, architecture, and design choices. Component-specific planning documents may also exist within their respective directories (e.g., `timescaledb/PLANNING.md`).
+*   **`PRD.md`**: Product Requirements Document. A general PRD might be at the root, with more detailed PRDs often found within component directories (e.g., `reddit_scraper/prd.md`, `timescaledb/prd.md`).
+*   **`TODO.md` / `TASK.md`**: Task list and progress tracking. Similar to PRDs, these may be at the root for overall tasks, or within component directories for module-specific tasks (e.g., `timescaledb/todo.md`).
+*   **Component `README.md` files**: Each service/component (e.g., `reddit_scraper/`, `timescaledb/`) has its own `README.md` detailing its specific setup, configuration, and usage.
+*   **`alembic/` directory & `alembic.ini`**: Configuration and scripts for database schema migrations using Alembic.
+*   **`.env.example`**: Template for environment variables required by the project.
+
+Refer to individual component directories for more detailed, module-specific documentation.
+
 ## Project Structure
 
 ```

@@ -31,9 +31,15 @@ USER scraper
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/reddit_scraper
 
 # Command to run the application
-# Using the --daemon flag to ensure continuous operation
-# The maintenance_interval_sec in config.yaml controls how frequently it checks for new posts (61 seconds)
 ENTRYPOINT ["python", "-m", "reddit_scraper.cli"]
-CMD ["scrape", "--daemon", "--config", "config.yaml", "--loglevel", "INFO"]
+
+# CMD to run the scraper with specified config and loglevel
+# The 'scrape' command should come before its options.
+CMD ["scrape", "--config", "/app/reddit_scraper/config.yaml", "--loglevel", "DEBUG"]
+
+# Temporary diagnostic ENTRYPOINT (commented out)
+# ENTRYPOINT ["python", "-c", "import os, sys; print('--- Contents of /app ---'); print(sorted(os.listdir('/app'))); print('--- Contents of /app/reddit_scraper ---'); print(sorted(os.listdir('/app/reddit_scraper'))); print('--- sys.path ---'); print(sys.path); print('--- Attempting import ---'); import reddit_scraper.cli; print('--- Import successful: reddit_scraper.cli found ---')"]
+# CMD []
