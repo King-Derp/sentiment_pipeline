@@ -30,6 +30,7 @@ from reddit_scraper.storage.csv_sink import CsvSink
 from reddit_scraper.storage.composite_sink import CompositeSink
 from reddit_scraper.storage.postgres_sink import PostgresSink
 from reddit_scraper.storage.sqlalchemy_postgres_sink import SQLAlchemyPostgresSink
+from reddit_scraper.storage.database import init_db as initialize_database_session
 
 # Import scraper classes
 from reddit_scraper.base_scraper import BaseScraper
@@ -180,17 +181,27 @@ async def run_scraper(
     sinks = [CsvSink(config.csv_path)] # Always include CSVSink
     
     if config.postgres and config.postgres.enabled:
-        try:
-            if config.postgres.use_sqlalchemy:
-                logger.info("Using SQLAlchemy PostgreSQL sink.")
-                pg_sink = SQLAlchemyPostgresSink(config.postgres)
+        if config.postgres.use_sqlalchemy:
+            logger.info("Attempting to initialize database for SQLAlchemy sink...")
+            # Call init_db from reddit_scraper.storage.database
+            if initialize_database_session(config.postgres):
+                try:
+                    logger.info("Using SQLAlchemy PostgreSQL sink.")
+                    pg_sink = SQLAlchemyPostgresSink(config.postgres)
+                    sinks.append(pg_sink)
+                    logger.info("SQLAlchemy PostgreSQL sink enabled and initialized.")
+                except Exception as e:
+                    logger.error(f"Failed to initialize SQLAlchemyPostgresSink (even after DB init_db call): {e}. Proceeding with CSV sink only.")
             else:
+                logger.error("Database initialization (init_db) failed. SQLAlchemy PostgreSQL sink will not be used.")
+        else: # Direct connection PostgreSQL sink
+            try:
                 logger.info("Using direct connection PostgreSQL sink.")
-                pg_sink = PostgresSink(config.postgres)
-            sinks.append(pg_sink)
-            logger.info("PostgreSQL sink enabled and initialized.")
-        except Exception as e:
-            logger.error(f"Failed to initialize PostgreSQL sink: {e}. Proceeding with CSV sink only.")
+                pg_sink = PostgresSink(config.postgres) # Assuming this sink handles its own connections
+                sinks.append(pg_sink)
+                logger.info("Direct PostgreSQL sink enabled and initialized.")
+            except Exception as e:
+                logger.error(f"Failed to initialize direct PostgresSink: {e}. Proceeding with CSV sink only.")
     else:
         logger.info("PostgreSQL sink is not enabled in the configuration.")
         

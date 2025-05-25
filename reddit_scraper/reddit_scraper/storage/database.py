@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session
+from contextlib import contextmanager
 
 from reddit_scraper.config import PostgresConfig
 
@@ -59,6 +60,7 @@ class SentimentScore(Base):
         return f"<SentimentScore(id={self.id}, event_id={self.event_id}, score={self.score})>"
 
 # Database session context manager
+@contextmanager
 def get_db():
     """
     Get a database session.
@@ -69,11 +71,17 @@ def get_db():
     Yields:
         SQLAlchemy session
     """
-    db = SessionLocal()
+    if SessionLocal is None:
+        logger.error("SessionLocal is not initialized. init_db may have failed or was not called.")
+        raise RuntimeError("Database session factory (SessionLocal) is not initialized.")
+
+    db = None  # Initialize db to None
     try:
+        db = SessionLocal()
         yield db
     finally:
-        db.close()
+        if db:  # Check if db was successfully created
+            db.close()
 
 def init_db(pg_config: PostgresConfig) -> bool:
     """
@@ -87,14 +95,17 @@ def init_db(pg_config: PostgresConfig) -> bool:
         pg_config: PostgreSQL configuration object.
             
     Returns:
-        bool: True if initialization was successful, False otherwise
+        bool: True if initialization was successful and SessionLocal is ready, False otherwise.
     """
     global engine, SessionLocal # Declare them as global to modify module-level variables
 
     if not pg_config.enabled:
-        logger.warning("PostgreSQL is disabled in configuration. Skipping init_db.")
-        return True # Or False, depending on desired behavior for disabled PG
+        logger.warning("PostgreSQL is disabled in configuration. Skipping init_db. SessionLocal will not be initialized.")
+        engine = None
+        SessionLocal = None
+        return False # CRITICAL: Return False if not enabled, so SessionLocal is not expected.
 
+    db = None  # Initialize local db variable to None
     try:
         database_url = f"postgresql://{pg_config.user}:{pg_config.password}@{pg_config.host}:{pg_config.port}/{pg_config.database}"
         
@@ -114,49 +125,55 @@ def init_db(pg_config: PostgresConfig) -> bool:
 
         # Create all tables in the database that are defined in Base.metadata
         # This will not recreate tables if they already exist.
-        Base.metadata.create_all(engine)
-        logger.info("Ensured all tables are created (if they didn't exist).")
+        # Base.metadata.create_all(engine) # Cascade: Commented out - Schema should be managed by Alembic
 
-        # Create a session to test the connection
+        # Test connection and verify schema
+        logger.info("Testing database connection...")
         db = SessionLocal()
         
-        # Check if the raw_submissions table exists
-        result = db.execute(text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'raw_submissions');"))
-        table_exists = result.scalar()
+        # Cascade: Commenting out schema verification logic as it's based on RawEvent model,
+        # which conflicts with the Alembic-managed schema for 'raw_submissions'.
+        # This block can be revisited if a new health check for Alembic schema is needed.
+        # # Check if the raw_submissions table exists
+        # result = db.execute(text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'raw_submissions');"))
+        # table_exists = result.scalar()
+        # 
+        # if not table_exists:
+        #     logger.error("raw_submissions table does not exist in the market_postgres database!")
+        #     # Base.metadata.create_all(engine) will handle creation, so this check might be redundant
+        #     # or could be a stricter pre-check if we don't want auto-creation in some scenarios.
+        #     # For now, allowing create_all to handle it is fine.
+        #     pass # Table will be created by Base.metadata.create_all(engine)
+        # 
+        # # Check the table structure to ensure compatibility
+        # # This check is good to have even if create_all runs, to verify existing tables.
+        # result = db.execute(text("""
+        # SELECT column_name, data_type 
+        # FROM information_schema.columns 
+        # WHERE table_name = 'raw_submissions' AND table_schema = 'public'
+        # ORDER BY ordinal_position;
+        # """))
+        # columns = result.fetchall()
+        # column_names = [col[0] for col in columns]
+        # logger.info(f"Found columns in raw_submissions: {', '.join(column_names)}")
+        # 
+        # # Check for required columns
+        # required_columns = ['id', 'source', 'source_id', 'occurred_at', 'payload']
+        # missing_columns = [col for col in required_columns if col not in column_names]
+        # 
+        # if missing_columns:
+        #     logger.error(f"raw_submissions table is missing required columns: {missing_columns}")
+        #     return False
         
-        if not table_exists:
-            logger.error("raw_submissions table does not exist in the market_postgres database!")
-            # Base.metadata.create_all(engine) will handle creation, so this check might be redundant
-            # or could be a stricter pre-check if we don't want auto-creation in some scenarios.
-            # For now, allowing create_all to handle it is fine.
-            pass # Table will be created by Base.metadata.create_all(engine)
-        
-        # Check the table structure to ensure compatibility
-        # This check is good to have even if create_all runs, to verify existing tables.
-        result = db.execute(text("""
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'raw_submissions' AND table_schema = 'public'
-        ORDER BY ordinal_position;
-        """))
-        columns = result.fetchall()
-        column_names = [col[0] for col in columns]
-        logger.info(f"Found columns in raw_submissions: {', '.join(column_names)}")
-        
-        # Check for required columns
-        required_columns = ['id', 'source', 'source_id', 'occurred_at', 'payload']
-        missing_columns = [col for col in required_columns if col not in column_names]
-        
-        if missing_columns:
-            logger.error(f"raw_submissions table is missing required columns: {missing_columns}")
-            return False
-        
-        logger.info("Database connection and schema verification successful")
+        logger.info("Database connection successful (schema verification for RawEvent skipped).")
         return True
         
     except Exception as e:
         logger.error(f"Failed to initialize database: {str(e)}")
         logger.error("Database initialization error details:", exc_info=True)
+        engine = None         # Ensure engine is reset on error
+        SessionLocal = None   # Ensure SessionLocal is reset on error
         return False
     finally:
-        db.close()
+        if db:  # Check if db was assigned before trying to close
+            db.close()
