@@ -38,7 +38,7 @@ ENTRYPOINT ["python", "-m", "reddit_scraper.cli"]
 
 # CMD to run the scraper with specified config and loglevel
 # The 'scrape' command should come before its options.
-CMD ["scrape", "--config", "/app/reddit_scraper/config.yaml", "--loglevel", "DEBUG"]
+CMD ["scrape", "--daemon", "--config", "/app/reddit_scraper/config.yaml", "--loglevel", "INFO"]
 
 # Temporary diagnostic ENTRYPOINT (commented out)
 # ENTRYPOINT ["python", "-c", "import os, sys; print('--- Contents of /app ---'); print(sorted(os.listdir('/app'))); print('--- Contents of /app/reddit_scraper ---'); print(sorted(os.listdir('/app/reddit_scraper'))); print('--- sys.path ---'); print(sys.path); print('--- Attempting import ---'); import reddit_scraper.cli; print('--- Import successful: reddit_scraper.cli found ---')"]

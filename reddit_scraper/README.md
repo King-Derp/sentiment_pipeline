@@ -19,6 +19,10 @@ This tool collects Reddit submissions from finance-related subreddits to support
 *   **Graceful Shutdown:** Handles `SIGINT` and `SIGTERM` signals for a clean shutdown process.
 *   **Standardized Logging:** Implements consistent logging practices for monitoring and debugging.
 *   **Adherence to Project Rules:** Follows the guidelines outlined in the main `scraper_implementation_rule.md`.
+*   **Flexible PostgreSQL Sink Strategy:** Offers two mechanisms for writing to PostgreSQL:
+    *   `SQLAlchemyPostgresSink`: Utilizes SQLAlchemy ORM (with the `RawEventORM` model) for type-safe, batched database operations. This is the recommended approach and aligns with using Alembic for schema management.
+    *   `PostgresSink`: Uses direct `psycopg2` calls for database interaction. This option might be considered for specific scenarios but bypasses the ORM layer.
+    *   The choice between these sinks is controlled by the `postgres.use_sqlalchemy` boolean flag in the `config.yaml` file.
 
 ## Target Subreddits
 
@@ -536,7 +540,7 @@ The scraper supports dual data storage mechanisms:
 1.  **TimescaleDB/PostgreSQL Database (Primary):**
     *   All successfully fetched and processed Reddit submissions are written to the configured TimescaleDB/PostgreSQL database.
     *   This is the primary data store for analytical queries and long-term storage.
-    *   The schema (e.g., `raw_submissions` table and its hypertable configuration) is managed by Alembic migrations (see main project `README.md`).
+    *   The schema (e.g., `raw_events` table, its hypertable configuration, and primary key) is managed by Alembic migrations (see main project `README.md`). *(Note: The specific primary key for `raw_events` should be documented here once confirmed; it is expected to be a composite key including the time partitioning column `occurred_at`.)*
 
 2.  **CSV Files (Secondary/Backup):**
     *   As a fallback or for local operational use, data is also appended to CSV files.
