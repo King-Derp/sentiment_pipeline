@@ -1,5 +1,7 @@
 # Specialized Scrapers
 
+> **Note on Deprecation**: The Deep Historical and Hybrid Scrapers mentioned in this document are deprecated and no longer maintained. The rest of the document remains relevant for active implementations.
+
 ## Overview
 
 The Reddit Scraper project includes several specialized scrapers designed for targeted historical data collection. Unlike the default scraper which focuses on maintaining an up-to-date dataset, specialized scrapers use specific strategies to retrieve historical content from Reddit.
@@ -29,35 +31,41 @@ The `TargetedHistoricalScraper` focuses on collecting finance-related Reddit sub
 python -m reddit_scraper.cli scraper targeted
 ```
 
-### 2. Deep Historical Scraper
+### ⚠️ 2. Deep Historical Scraper (Deprecated)
 
-The `DeepHistoricalScraper` employs a more granular approach by splitting the historical timeline into small windows, allowing for more thorough data collection.
+> **Deprecation Notice**: This scraper is no longer maintained. The functionality has been consolidated into the Targeted Historical Scraper.
 
-#### Key Features:
+The `DeepHistoricalScraper` was designed to employ a more granular approach by splitting the historical timeline into small windows, allowing for more thorough data collection.
 
-- **Monthly Time Windows**: Breaks down years into monthly chunks
-- **Comprehensive Coverage**: More likely to find submissions that might be missed by broader searches
-- **Pagination Support**: Retrieves up to 1000 submissions per time window when available
+#### Key Features (Historical Reference):
 
-#### Usage:
+- **Monthly Time Windows**: Broke down years into monthly chunks
+- **Comprehensive Coverage**: Was more likely to find submissions that might be missed by broader searches
+- **Pagination Support**: Retrieved up to 1000 submissions per time window when available
+
+#### Historical Usage:
 
 ```bash
+# No longer functional
 python -m reddit_scraper.cli scraper deep
 ```
 
-### 3. Hybrid Historical Scraper
+### ⚠️ 3. Hybrid Scraper (Deprecated)
 
-The `HybridHistoricalScraper` combines both targeted and deep approaches for maximum coverage.
+> **Deprecation Notice**: This scraper is no longer maintained. The functionality has been consolidated into the Targeted Historical Scraper.
 
-#### Key Features:
+The `HybridScraper` was designed to combine aspects of both targeted and deep historical scraping approaches.
 
-- **Combined Strategies**: Uses both specific search terms and granular time windows
-- **Maximum Coverage**: Offers the most comprehensive historical data collection
-- **Pagination Support**: Retrieves up to 1000 submissions per search when available
+#### Key Features (Historical Reference):
 
-#### Usage:
+- **Dual Search Strategy**: Used both targeted search terms and time-based windows
+- **Flexible Time Ranges**: Could be configured to search by year, month, or custom date ranges
+- **Pagination Support**: Retrieved up to 1000 submissions per search when available
+
+#### Historical Usage:
 
 ```bash
+# No longer functional
 python -m reddit_scraper.cli scraper hybrid
 ```
 

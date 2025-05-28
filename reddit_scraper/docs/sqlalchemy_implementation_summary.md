@@ -1,4 +1,8 @@
-# SQLAlchemy ORM and Connection Pooling Implementation
+# ⚠️ LEGACY DOCUMENTATION: SQLAlchemy ORM and Connection Pooling Implementation
+
+> **Note**: This document is preserved for historical reference only. It describes an older implementation that is no longer in use. For current database integration details, please refer to the main project documentation.
+
+## Overview
 
 ## Overview
 

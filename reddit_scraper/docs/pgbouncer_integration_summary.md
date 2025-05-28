@@ -1,4 +1,8 @@
-# PgBouncer Integration with SQLAlchemy Summary
+# ⚠️ LEGACY DOCUMENTATION: PgBouncer Integration with SQLAlchemy
+
+> **Note**: This document is preserved for historical reference only. It describes an older implementation that is no longer in use. For current database integration details, please refer to the main project documentation.
+
+## Summary
 
 ## Current Status
 
