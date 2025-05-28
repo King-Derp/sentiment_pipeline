@@ -29,7 +29,7 @@ This PRD will serve as a guide for development, deployment, and ongoing manageme
 *   **SC3:** The database can ingest at least [Specify target, e.g., 1 million] new Reddit submissions per day without significant performance degradation.
 *   **SC4:** The system remains stable and available (e.g., >99.9% uptime) under normal operational load.
 *   **SC5:** Key database metrics (e.g., disk usage, query latency, ingestion rate) are monitorable.
-*   **SC6:** The `raw_submissions` table (or equivalent) is successfully converted to and functions as a TimescaleDB hypertable, partitioned by `created_utc`.
+*   **SC6:** The `raw_events` table (or equivalent) is successfully converted to and functions as a TimescaleDB hypertable, partitioned by `created_utc`.
 
 ## 3. Stakeholders
 
@@ -44,7 +44,7 @@ This PRD will serve as a guide for development, deployment, and ongoing manageme
 *   Deployment of TimescaleDB as a Docker container managed via `docker-compose`.
 *   Configuration of the `reddit_scraper` service to write data to TimescaleDB.
 *   Creation and management of a hypertable for Reddit submission data, partitioned by the submission creation time (`created_utc`).
-*   Basic schema definition for storing Reddit submissions (aligning with `SubmissionORM` from the scraper).
+*   Basic schema definition for storing Reddit submissions (aligning with `RawEventORM` as defined in `ARCHITECTURE.md`).
 *   Ensuring data persistence through Docker volumes.
 *   Basic security configuration (user, password, database access).
 *   Providing connectivity for other services within the same Docker network.
@@ -70,17 +70,16 @@ This PRD will serve as a guide for development, deployment, and ongoing manageme
 ### FR2: Schema and Hypertable Management (Alembic-Driven)
 
 *   **FR2.1 (Schema Definition and Evolution):**
-    *   The database schema (tables, columns, data types, constraints) for data like `raw_submissions` WILL be defined and managed by **Alembic** migration scripts.
-    *   SQLAlchemy models within scraper services (e.g., `SubmissionORM`) will reflect this Alembic-managed schema for ORM interaction, but WILL NOT be used to create or alter tables (`metadata.create_all()` should not be used by scrapers for this purpose).
-    *   Schema changes and evolutions (e.g., adding new columns) MUST be handled through new Alembic migration scripts.
-
+    *   The database schema (tables, columns, data types, constraints) for data like `raw_events` WILL be defined and managed by **Alembic** migration scripts.
+    *   Services (like `reddit_scraper`) MUST NOT attempt to create or alter tables directly (e.g., via `metadata.create_all()`). They should assume the schema defined by Alembic exists.
+    *   The schema will align with the `RawEventORM` model detailed in the project's `ARCHITECTURE.md`.
 *   **FR2.2 (TimescaleDB Extension Enablement):**
     *   The `timescaledb` PostgreSQL extension MUST be enabled in the database.
     *   This WILL be handled by an Alembic migration script (e.g., using `op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")`).
 
 *   **FR2.3 (Hypertable Creation and Configuration):**
-    *   Key tables containing time-series data (e.g., `raw_submissions`) MUST be converted into TimescaleDB hypertables.
-    *   This conversion (e.g., `SELECT create_hypertable('raw_submissions', 'created_utc', ...)`) WILL be performed by an Alembic migration script following table creation.
+    *   Key tables containing time-series data (e.g., `raw_events`) MUST be converted into TimescaleDB hypertables.
+    *   This conversion (e.g., `SELECT create_hypertable('raw_events', 'created_utc', ...)`) WILL be performed by an Alembic migration script following table creation.
     *   The choice of time partitioning column (e.g., `created_utc`) and `chunk_time_interval` will be defined within the Alembic migration.
 
 *   **FR2.4 (Indexing):**

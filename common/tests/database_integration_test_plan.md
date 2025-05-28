@@ -9,12 +9,11 @@ This document outlines the testing strategy for database integration across diff
 3. **Consistency**: Data must be consistently formatted in the `raw_events` table
 4. **Isolation**: Tests must not affect production data
 
-> **Implementation Status**  
+> 🔄 = Partially implemented  
 > ✅ = Immediate implementation  
 > ⏳ = Future implementation  
-> 🔄 = Partially implemented  
 
-## Test Structure
+## ✅ Test Structure
 
 ### ✅ 1. Unit Tests (`test_sqlalchemy_postgres_sink_unit.py`)
 
@@ -22,12 +21,12 @@ This document outlines the testing strategy for database integration across diff
 - **Input**: Raw data from source API (Reddit, etc.)
 - **Output**: `RawEventORM` instance
 - **Test Cases**:
-  - ✅ Map source data to `RawEventORM` fields
-  - ✅ Handle missing optional fields
-  - ✅ Convert timestamps to timezone-aware UTC
-  - ✅ Handle special characters in text fields
-  - ✅ Validate required fields
-  - ✅ Handle edge cases (empty data, null values)
+  -  Map source data to `RawEventORM` fields
+  -  Handle missing optional fields
+  -  Convert timestamps to timezone-aware UTC
+  -  Handle special characters in text fields
+  -  Validate required fields
+  -  Handle edge cases (empty data, null values)
 
 #### 1.2. Test Sink Operations
 - ✅ Test batch operations
@@ -73,10 +72,10 @@ This document outlines the testing strategy for database integration across diff
 ## Source-Specific Tests
 
 ### ✅ Reddit Implementation
-- Test PRAW data → `SubmissionRecord` conversion
+- Test PRAW data → `RawEventDTO` / `RawEventORM` conversion
 - Test rate limit handling
 - Test subreddit filtering
-- Test comment tree traversal
+- Test comment tree traversal (as an example of source-specific event processing logic for comment events)
 
 ### ⏳ Future Sources
 - Twitter API integration

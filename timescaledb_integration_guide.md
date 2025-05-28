@@ -7,7 +7,7 @@ This document provides guidelines and best practices for connecting scraper serv
 
 ## 1. Overview
 
-All scraper services, as per `scraper_implementation_rule.md`, are required to use TimescaleDB as their primary data sink. This guide details how to establish and manage the database connection from a typical Python-based scraper service using SQLAlchemy.
+All scraper services, as per `scraper_implementation_rule.md`, are required to use TimescaleDB as their primary data sink for the `raw_events` table. This guide details how to establish and manage the database connection from a typical Python-based scraper service using SQLAlchemy. For a comprehensive overview of TimescaleDB's role in the project, the `raw_events` data model, and schema management, please refer to [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ## 2. Configuration and Connection Parameters
 
@@ -72,8 +72,8 @@ DATABASE_URL_ASYNC = f"postgresql+asyncpg://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{P
 
 ## 4. Database Interaction
 
-*   **SQLAlchemy Models:** Define SQLAlchemy models that reflect the table structures. These models should align with the schema defined and managed by **Alembic** (as per Rule #2 in `scraper_implementation_rule.md`). Scrapers **DO NOT** create tables using `metadata.create_all()`.
-*   **Data Sink Logic:** Implement a `PostgresSink` class (or similar) that uses the SQLAlchemy engine to perform database operations (e.g., inserting new records).
+*   **SQLAlchemy Models:** Scrapers utilize the `RawEventORM` model (typically located in `common/models/`) which maps to the `raw_events` table. The structure of `RawEventORM` and the `raw_events` table is defined and managed by **Alembic**. Scrapers **DO NOT** create tables using `metadata.create_all()`. For full details on `RawEventORM` and the `raw_events` schema, see [ARCHITECTURE.md](../ARCHITECTURE.md).
+*   **Data Sink Logic:** Scrapers should use a data sink (e.g., `SQLAlchemyPostgresSink`) that employs the SQLAlchemy engine to insert `RawEventDTO` data into the `raw_events` table. The role and implementation details of such sinks are described in [ARCHITECTURE.md](../ARCHITECTURE.md).
 *   **Connection Pooling:** SQLAlchemy engines manage connection pooling by default, which is generally sufficient for most scraper workloads.
 
 ## 5. Docker Compose Considerations
@@ -86,7 +86,7 @@ When running services via `docker-compose.yml`:
 
 ## 6. Schema Management Reminder
 
-As a reminder, all database schema (tables, hypertables, indexes, etc.) are managed via **Alembic** (Rule #2). Scrapers assume the necessary schema exists. If a new scraper requires a new table or modifications to an existing one, an Alembic migration script must be created.
+All database schema for the `raw_events` table, including its hypertable configuration and indexes, is exclusively managed via **Alembic**. Scrapers assume the necessary schema exists. For comprehensive details on schema management, the `raw_events` table structure, and Alembic's role, please consult [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ---
 *This guide should be updated if connection mechanisms or best practices evolve.*

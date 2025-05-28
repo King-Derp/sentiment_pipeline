@@ -7,6 +7,7 @@ This document serves as a central index for all project documentation, organized
 | File | Purpose |
 |------|---------|
 | [README.md](./README.md) | Main project overview, setup instructions, and usage guide |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Central document detailing project architecture, data models, component interactions, schema management, configuration, and deployment. |
 | [TASK.md](./TASK.md) | Current tasks and their status |
 | [TODO.md](./TODO.md) | General to-do items and future work |
 | [scraper_implementation_rule.md](./scraper_implementation_rule.md) | Implementation rules and guidelines for scrapers |
@@ -15,7 +16,7 @@ This document serves as a central index for all project documentation, organized
 ## Common
 
 ### Tests
-- [comment_scraper_test_plan.md](./common/tests/comment_scraper_test_plan.md) - Test strategy for database integration across data sources
+- [database_integration_test_plan.md](./common/tests/database_integration_test_plan.md) - Test strategy for database integration (SQLAlchemy sink, `RawEventORM`, TimescaleDB) across various data sources.
 
 ## Reddit Scraper
 
@@ -23,20 +24,16 @@ This document serves as a central index for all project documentation, organized
 |------|---------|
 | [README.md](./reddit_scraper/README.md) | Main documentation for the Reddit scraper component |
 | [prd.md](./reddit_scraper/prd.md) | Product requirements document for the Reddit scraper |
-| [todo.md](./reddit_scraper/todo.md) | Active to-do items for the Reddit scraper |
-| [todo_part2.md](./reddit_scraper/todo_part2.md) | Additional to-do items for the Reddit scraper |
-| [postgres_implementation_plan.md](./reddit_scraper/postgres_implementation_plan.md) | Implementation plan for PostgreSQL integration |
-| [test_env.txt](./reddit_scraper/test_env.txt) | Test environment configuration |
+| [todo_part2.md](./reddit_scraper/todo_part2.md) | Additional to-do items for the Reddit scraper (review for consolidation) |
+| [test_env.txt](./reddit_scraper/test_env.txt) | Example environment configuration for Reddit scraper tests (review for consolidation) |
 
 ### Reddit Scraper Documentation
 
 | File | Purpose |
 |------|---------|
-| [default_scraper.md](./reddit_scraper/docs/default_scraper.md) | Documentation for the default scraper implementation |
 | [monitoring.md](./reddit_scraper/docs/monitoring.md) | Monitoring setup and guidelines |
-| [pgbouncer_integration_summary.md](./reddit_scraper/docs/pgbouncer_integration_summary.md) | ⚠️ **LEGACY** - PgBouncer integration details (archived) |
-| [specialized_scrapers.md](./reddit_scraper/docs/specialized_scrapers.md) | Documentation for specialized scraper implementations (note: Deep Historical and Hybrid scrapers are deprecated) |
-| [sqlalchemy_implementation_summary.md](./reddit_scraper/docs/sqlalchemy_implementation_summary.md) | ⚠️ **LEGACY** - SQLAlchemy implementation details (archived) |
+| [pgbouncer_integration_summary.md](./reddit_scraper/docs/pgbouncer_integration_summary.md) | **LEGACY** - PgBouncer integration details (archived) |
+| [sqlalchemy_implementation_summary.md](./reddit_scraper/docs/sqlalchemy_implementation_summary.md) | **LEGACY** - SQLAlchemy implementation details (archived) |
 
 ## TimescaleDB
 

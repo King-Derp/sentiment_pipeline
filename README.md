@@ -52,21 +52,44 @@ graph TD
     C --> E(Visualization Service - Roadmap);
 ```
 
+## Architecture Overview
+
+For a detailed explanation of the project architecture, data models, and component interactions, please see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+The project utilizes a modular design with the following key components:
+*   **Scrapers:** (e.g., `reddit_scraper`) Responsible for collecting data from various sources.
+*   **Common Modules:** Shared utilities, DTOs (`RawEventDTO`), and ORM models (`RawEventORM`).
+*   **TimescaleDB:** A PostgreSQL database with the TimescaleDB extension for storing time-series data in the `raw_events` hypertable.
+*   **Alembic:** Manages database schema migrations.
+*   **Docker & Docker Compose:** For containerization and orchestration.
+
+### Database Schema (`raw_events` table)
+
+The primary table for storing all collected data is `raw_events`. It is a TimescaleDB hypertable partitioned by the `occurred_at` timestamp.
+
+**For the detailed schema definition, primary key, unique constraints, and ORM model, please refer to the [Data Model section in ARCHITECTURE.md](ARCHITECTURE.md#3-data-model).**
+
+Key fields include:
+*   `id` (TEXT): Source-specific unique ID.
+*   `occurred_at` (TIMESTAMPTZ): Event timestamp (partition key).
+*   `source` (TEXT): Data source (e.g., 'reddit').
+*   `payload` (JSONB): Raw event data.
+
 ## Services
 
 ### 1. Reddit Scraper
 
 -   **Directory:** `reddit_scraper/`
--   **Description:** A Python application responsible for fetching submissions from configured subreddits using the Reddit API. It handles rate limiting, error management, and data formatting before sending it to the storage backend.
+-   **Purpose:** Fetches Reddit submissions and comments from specified subreddits.
 -   **Key Features:** Historical backfilling, continuous monitoring of new posts, configurable subreddits and data fields.
 -   **Documentation:** See `reddit_scraper/README.md` and `reddit_scraper/prd.md`.
 
 ### 2. TimescaleDB
 
--   **Directory:** `timescaledb/` (for documentation like PRD, To-Do)
--   **Description:** An instance of TimescaleDB (PostgreSQL extended for time-series data) running in a Docker container. It serves as the primary data store for all Reddit submissions.
--   **Key Features:** Hypertables for automatic time-based partitioning, efficient time-series queries, data persistence.
--   **Documentation:** See `timescaledb/README.md`, `timescaledb/prd.md`, and the `timescaledb_integration_guide.md`.
+-   **Directory:** `timescaledb/` (for documentation like `prd.md`, `todo.md`)
+-   **Purpose:** Stores all collected time-series data in the `raw_events` hypertable.
+-   **Key Features:** Optimized for time-series data, supports SQL queries, managed by Alembic migrations.
+-   **Documentation:** For detailed schema, setup, and integration, see [ARCHITECTURE.md](ARCHITECTURE.md) and [timescaledb_integration_guide.md](timescaledb_integration_guide.md). Component-specific details are in `timescaledb/prd.md` and `timescaledb/todo.md`.
 
 ### 3. Sentiment Analysis Service (Roadmap)
 
@@ -148,13 +171,7 @@ docker-compose logs -f timescaledb   # Specific service
 
 ### 4. Initial Database Setup (TimescaleDB with Alembic)
 
-This section outlines the steps to initialize the TimescaleDB instance and apply database schema migrations using Alembic. Alembic will handle the creation of tables, enabling the TimescaleDB extension, and setting up hypertables.
-
-**Prerequisites:**
-
-*   Ensure Docker and Docker Compose are running.
-*   The TimescaleDB service (`timescaledb`) should be running. You can start it with: `docker-compose up -d timescaledb` and wait a moment for it to initialize.
-*   Your `scraper.env` file must be correctly populated with database credentials (`PG_HOST=timescaledb`, `PG_PORT=5432`, `PG_USER`, `PG_PASSWORD`, `PG_DB`) as these will be used by Alembic running inside the `reddit_scraper` container.
+The `reddit_scraper` service (or a dedicated migration service) uses Alembic to manage the database schema for the `raw_events` table in TimescaleDB. This includes creating the table, enabling the `timescaledb` extension, and converting the table to a hypertable.
 
 **Steps:**
 
@@ -164,38 +181,12 @@ This section outlines the steps to initialize the TimescaleDB instance and apply
         docker-compose up -d timescaledb
         ```
     *   Allow a few moments for the database service to initialize.
-
 2.  **Apply Alembic Migrations:**
-    *   Alembic migrations define and apply schema changes to the database. This includes creating tables (e.g., `raw_submissions`), enabling the `timescaledb` extension, and converting tables to hypertables.
-    *   To apply all pending migrations, run the following command. This command is typically executed from a service that has Alembic and your project's SQLAlchemy models installed (e.g., the `reddit_scraper` service, or a dedicated Alembic service if you configure one).
+    *   Alembic migrations define and apply schema changes to the database. This includes creating tables (e.g., `raw_events`), enabling the `timescaledb` extension, and converting tables to hypertables.
+    *   Execute the migrations using the `reddit_scraper` service container (or your designated Alembic runner service):
         ```bash
         docker-compose exec reddit_scraper alembic upgrade head
-        ```
-        *(Note: If you create a separate service for Alembic tasks, replace `reddit_scraper` with that service name.)*
-
-3.  **Verify Setup (Optional):**
-    *   You can connect to the TimescaleDB instance to verify that the tables and hypertables have been created correctly.
-    *   Connect using `psql` via Docker exec:
-        ```bash
-        docker-compose exec timescaledb psql -U <your_timescaledb_user> -d <your_timescaledb_database>
-        ```
-        (Replace `<your_timescaledb_user>` and `<your_timescaledb_database>` with values from your `.env` file, e.g., `PG_USER` and `PG_DB`).
-    *   Inside `psql`, you can check:
-        ```sql
-        -- List tables (should include raw_submissions or similar)
-        \dt
-
-        -- Check if TimescaleDB extension is active
-        \dx timescaledb
-
-        -- List hypertables (should show raw_submissions as a hypertable)
-        SELECT * FROM timescaledb_information.hypertables;
-
-        -- Describe the hypertable structure
-        \d+ raw_submissions
-        ```
-
-This Alembic-driven setup ensures that your database schema is version-controlled and applied consistently across different environments.
+```
 
 ## Usage
 
@@ -216,14 +207,12 @@ docker-compose down -v
 
 Key project documentation includes:
 
-*   **`PLANNING.md`**: (If present at root) Detailed project plan, architecture, and design choices. Component-specific planning documents may also exist within their respective directories (e.g., `timescaledb/PLANNING.md`).
-*   **`PRD.md`**: Product Requirements Document. A general PRD might be at the root, with more detailed PRDs often found within component directories (e.g., `reddit_scraper/prd.md`, `timescaledb/prd.md`).
-*   **`TODO.md` / `TASK.md`**: Task list and progress tracking. Similar to PRDs, these may be at the root for overall tasks, or within component directories for module-specific tasks (e.g., `timescaledb/todo.md`).
+*   **`ARCHITECTURE.md`**: The central document detailing project architecture, data models (`RawEventORM`, `raw_events` table), component interactions, schema management (Alembic), configuration, and deployment.
+*   **`TASK.md`**: Main task list and progress tracking for the project.
 *   **Component `README.md` files**: Each service/component (e.g., `reddit_scraper/`, `timescaledb/`) has its own `README.md` detailing its specific setup, configuration, and usage.
+*   **Component `prd.md` files**: Detailed PRDs are often found within component directories (e.g., `reddit_scraper/prd.md`, `timescaledb/prd.md`).
+*   **`timescaledb_integration_guide.md`**: Guide for TimescaleDB setup, schema, and best practices.
 *   **`alembic/` directory & `alembic.ini`**: Configuration and scripts for database schema migrations using Alembic.
-*   **`.env.example`**: Template for environment variables required by the project.
-
-Refer to individual component directories for more detailed, module-specific documentation.
 
 ## Project Structure
 
@@ -235,12 +224,15 @@ sentiment_pipeline/
 │   ├── versions/               # Individual migration files
 │   └── env.py                  # Alembic environment configuration
 │   └── script.py.mako          # Migration script template
+├── common/
+│   └── tests/
+│       └── database_integration_test_plan.md # Test plan for DB interactions
 ├── config/
 │   └── base_config.py          # Base Pydantic settings model
 ├── data/
 │   └── processed/              # Processed data (e.g., aggregated sentiment)
 │   └── raw/                    # Raw data from scrapers (CSV backups)
-├── docs/                       # General project documentation (placeholder)
+├── docs/                       # General project documentation (placeholder for future use)
 ├── reddit_scraper/
 │   ├── .dockerignore
 │   ├── Dockerfile
@@ -254,20 +246,21 @@ sentiment_pipeline/
 ├── sentiment_analyzer/         # (Future service)
 ├── timescaledb/
 │   ├── Dockerfile              # Dockerfile for TimescaleDB service (if custom)
-│   ├── README.md
-│   ├── init-db.sh              # Initialization script (if needed beyond Alembic)
+│   ├── COMMANDS.md
+│   ├── import_data_from_csv.py
 │   ├── prd.md                  # Product Requirements Document for TimescaleDB
+│   ├── sql_perf_query.md
+│   ├── tests/
+│   ├── tests_implementation_plan.md
 │   ├── todo.md
 │   └── todo_details.md
 ├── .env.example                # Example environment variables
 ├── .gitignore
+├── ARCHITECTURE.md             # Central architecture document
 ├── alembic.ini                 # Alembic configuration file
 ├── docker-compose.yml
-├── PLANNING.md
-├── PRD.md                      # Main Project Product Requirements Document
 ├── README.md                   # This file
 ├── TASK.md
-├── TODO.md
 ├── scraper_implementation_rule.md # Rules for all scrapers
 └── timescaledb_integration_guide.md # Guide for TimescaleDB integration
 ```

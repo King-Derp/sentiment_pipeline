@@ -7,27 +7,25 @@ This document outlines the mandatory rules and best practices for creating or mo
 
 ## 1. Timestamp Standardization
 
-*   **Rule:** All scraper services **MUST** standardize timestamps before sending data to any storage sink (e.g., TimescaleDB, CSV).
+*   **Rule:** All scraper services **MUST** standardize timestamps before sending data to any storage sink.
 *   **Details:**
-    *   **Source Parsing:** Each scraper is responsible for parsing the native timestamp format provided by its specific data source (e.g., Reddit API, Twitter API, news feeds).
-    *   **Conversion to UTC:** After parsing, the timestamp **MUST** be converted to a timezone-aware Python `datetime` object in **UTC** (Coordinated Universal Time).
+    *   **Source Parsing:** Each scraper is responsible for parsing the native timestamp format provided by its specific data source.
+    *   **Conversion to UTC:** After parsing, the timestamp **MUST** be converted to a timezone-aware Python `datetime` object in **UTC**.
     *   **Storage Format:** 
-        *   When preparing data for TimescaleDB (via `PostgresSink`), if the target database column is of type `TIMESTAMP WITH TIME ZONE` (TIMESTAMPTZ), the UTC `datetime` object can be passed directly (SQLAlchemy will handle it).
-        *   If the target database column is `BIGINT` (for storing Unix epoch time), the UTC `datetime` object should be converted to an integer representing seconds since the epoch (e.g., `int(utc_datetime.timestamp())`).
+        *   When preparing data for TimescaleDB (via `SQLAlchemyPostgresSink`), the UTC `datetime` object will be mapped to the `occurred_at` field (TIMESTAMPTZ) in the `raw_events` table. See `ARCHITECTURE.md` for schema details.
         *   For CSV output or other sinks, the timestamp should also be consistently represented in UTC, preferably in ISO 8601 format (e.g., `YYYY-MM-DDTHH:MM:SSZ`).
-    *   **Rationale:** Standardizing on UTC at the scraper level prevents timezone ambiguities, ensures data consistency in the central database, and simplifies time-based queries and partitioning in TimescaleDB, regardless of the original data source's timezone or format.
+    *   **Rationale:** Standardizing on UTC at the scraper level prevents timezone ambiguities and ensures data consistency. See `ARCHITECTURE.md` for details on how `occurred_at` is used for partitioning.
 
 ## 2. Database Schema Management via Alembic
 
 *   **Rule:** Individual scraper services **MUST NOT** define or attempt to create/modify database schemas (e.g., tables, indexes) directly.
 *   **Details:**
-    *   **Centralized Schema Control:** All database schema definitions, initial creation, and subsequent migrations (e.g., adding tables for new scrapers, adding columns, creating indexes) **MUST** be managed centrally using **Alembic**.
-    *   **Migration Scripts:** Developers adding a new scraper that requires a new table or modifications to an existing table must create or update Alembic migration scripts. These scripts will contain the necessary SQL DDL (Data Definition Language) commands.
-        *   This includes `CREATE TABLE` statements for new scrapers' data, and importantly, the `SELECT create_hypertable(...)` command for any new time-series tables intended for TimescaleDB.
-    *   **Scraper Assumption:** Scraper services should assume that the required database schema (tables, columns, types) already exists and is correctly configured when the scraper service starts. Their role is to interact with the data (CRUD operations), not manage the schema structure.
-    *   **SQLAlchemy Models:** Scrapers can (and should) use SQLAlchemy models for ORM interaction, but these models are for data mapping and should reflect the Alembic-managed schema, not drive its creation (i.e., no `metadata.create_all()` calls for schema setup within scraper code).
-    *   **Deployment:** Database migrations using Alembic **MUST** be run as a separate step in the deployment process *before* scraper services that depend on the schema are started.
-    *   **Rationale:** This decouples schema management from individual scraper application logic, prevents schema conflicts, ensures version-controlled schema changes, simplifies scraper development, and makes the overall database architecture more robust and maintainable.
+    *   **Centralized Schema Control:** All database schema definitions, including the `raw_events` table and its hypertable properties, **MUST** be managed centrally using **Alembic**. Refer to `ARCHITECTURE.md` for details on Alembic's role and the `raw_events` schema.
+    *   **Migration Scripts:** Developers needing schema changes must create or update Alembic migration scripts.
+    *   **Scraper Assumption:** Scraper services should assume that the required database schema already exists. Their role is to interact with the data, not manage the schema structure.
+    *   **SQLAlchemy Models:** Scrapers use SQLAlchemy models (like `RawEventORM`) for data mapping, reflecting the Alembic-managed schema. No `metadata.create_all()` calls for schema setup are permitted in scraper code. See `ARCHITECTURE.md` for details on `RawEventORM`.
+    *   **Deployment:** Database migrations using Alembic **MUST** be run as a separate step before scraper services are started.
+    *   **Rationale:** This decouples schema management from scraper logic and ensures a robust, version-controlled database architecture, as detailed in `ARCHITECTURE.md`.
 
 ## 3. Standardized Configuration and Secrets Management
 
@@ -43,7 +41,7 @@ This document outlines the mandatory rules and best practices for creating or mo
 *   **Rule:** All scraper services **MUST** validate incoming data from external sources and outgoing data destined for storage sinks.
 *   **Details:**
     *   **Input Validation:** Use `pydantic` models to define the expected structure and data types of raw data received from external APIs or sources. This helps catch unexpected data formats or missing fields early.
-    *   **Output Validation:** Use `pydantic` models to define the data structure being passed to storage sinks (e.g., the `SubmissionRecord` for `PostgresSink` or `CsvSink`). This ensures that the data conforms to the expected schema (managed by Alembic) before attempting to store it.
+    *   **Output Validation:** Use `pydantic` models to define the data structure being passed to storage sinks (e.g., the `RawEventDTO` for `SQLAlchemyPostgresSink` or `CsvSink`). This ensures that the data conforms to the expected schema (managed by Alembic) before attempting to store it.
 *   **Rationale:** Proactive data validation improves data quality, prevents malformed data from entering the system, provides clear data contracts between components, and aids in debugging by identifying data issues at their source or before storage.
 
 ## 5. Robust Error Handling and Retry Mechanisms
@@ -87,26 +85,20 @@ This document outlines the mandatory rules and best practices for creating or mo
         *   Close database connections, network sessions, and other critical resources cleanly.
 *   **Rationale:** Graceful shutdown ensures that the scraper can terminate cleanly, minimizing data loss or corruption, and releasing system resources properly. This is particularly important in containerized environments like Docker.
 
-## 9. Adherence to a Common Data Output Contract
+## 9. Adherence to a Common Data Output Contract (`RawEventDTO`)
 
-*   **Rule:** All scraper services **MUST** strive to map their collected data to a common core data model before sending it to storage sinks, supplemented by source-specific metadata.
+*   **Rule:** All scraper services **MUST** map their collected data to the common `RawEventDTO` before sending it to storage sinks.
 *   **Details:**
-    *   **Core Data Model:** Define a core `pydantic` model (e.g., `GenericPipelineItem`) that represents the essential, common fields expected from any data source. This model **MUST** include fields such as:
-        *   `item_id_from_source` (type: `str`, unique ID from the source platform)
-        *   `text_content` (type: `str`, primary textual content for analysis)
-        *   `author_id_from_source` (type: `Optional[str]`, unique ID of the author on the source platform)
-        *   `created_utc` (type: `datetime`, standardized UTC timestamp as per Rule 1)
-        *   `source_platform` (type: `str`, e.g., "reddit", "twitter", "news_api_vX")
-        *   `item_type` (type: `str`, e.g., "submission", "comment", "article", "tweet")
-    *   **Source-Specific Data:** Fields that are unique to a specific data source and do not fit into the core model should be stored in a flexible `metadata` field within the core model (e.g., a `dict` or a `pydantic` model, which can be stored as JSON/JSONB in PostgreSQL).
-    *   **Schema Alignment:** The structure of this common data model (and its representation in the database) will be defined and managed via Alembic migrations.
-*   **Rationale:** A common data contract simplifies downstream processing, such as sentiment analysis and visualization, by providing a consistent data structure. It allows analytical tools to work with data from multiple sources with minimal adaptation, while still preserving rich source-specific details.
+    *   **`RawEventDTO`:** This `pydantic` model defines the standard structure for all events. Refer to `ARCHITECTURE.md` for the complete definition of `RawEventDTO` and its fields (e.g., `id`, `occurred_at`, `source`, `event_type`, `payload`, etc.).
+    *   **Source-Specific Data:** Fields unique to a specific data source **MUST** be stored in the `payload` field (JSONB) of the `RawEventDTO`.
+    *   **Schema Alignment:** The `RawEventDTO` aligns with the `raw_events` table schema, which is managed by Alembic. See `ARCHITECTURE.md`.
+*   **Rationale:** The `RawEventDTO` ensures a consistent data structure for downstream processing and analytics, as outlined in `ARCHITECTURE.md`.
 
 ## 10. Standardized Dual Storage Output (TimescaleDB and CSV)
 
-*   **Rule:** All scraper services **MUST** write their collected data to both TimescaleDB (as the primary analytical data store) and a local CSV file (for operational backup, quick inspection, or alternative local access).
+*   **Rule:** All scraper services **MUST** write their collected data to both TimescaleDB (via `SQLAlchemyPostgresSink` using `RawEventORM`) and a local CSV file.
 *   **Details:**
-    *   **TimescaleDB Sink:** This is the primary destination. Data written **MUST** adhere to the Alembic-managed schema (Rule #2) and the Common Data Output Contract (Rule #9).
+    *   **TimescaleDB Sink:** This is the primary destination. Data written **MUST** adhere to the Alembic-managed `raw_events` schema (Rule #2) using the `RawEventDTO` (Rule #9). Refer to `ARCHITECTURE.md` for details on the `SQLAlchemyPostgresSink` and `RawEventORM`.
     *   **CSV Sink:**
         *   **Mandatory Output:** CSV output is a required secondary sink.
         *   **Directory Structure:** CSV files **MUST** be saved within a dedicated subdirectory inside the project's root `/data/` folder. This subdirectory should be named after the `source_platform` as defined in the Common Data Output Contract (Rule #9), e.g., `/data/reddit/`, `/data/twitter/`, `/data/news_api_vX/`.
