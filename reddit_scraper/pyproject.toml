@@ -57,7 +57,7 @@ strict_optional = true
 
 [tool.poetry.scripts]
 scrape = "reddit_scraper.cli:main"
-targeted = "reddit_scraper.cli:scraper_app.commands['targeted'].callback"
-deep = "reddit_scraper.cli:scraper_app.commands['deep'].callback"
-hybrid = "reddit_scraper.cli:scraper_app.commands['hybrid'].callback"
-pushshift = "reddit_scraper.cli:scraper_app.commands['pushshift'].callback"
+targeted = "reddit_scraper.cli:scraper_app.commands[\"targeted\"].callback"
+deep = "reddit_scraper.cli:scraper_app.commands[\"deep\"].callback"
+hybrid = "reddit_scraper.cli:scraper_app.commands[\"hybrid\"].callback"
+pushshift = "reddit_scraper.cli:scraper_app.commands[\"pushshift\"].callback"
