@@ -53,24 +53,24 @@ This document outlines the step-by-step tasks required to implement TimescaleDB 
     -   [x] Ensure scraper(s) use the environment variables (`PG_HOST`, etc.) via a centralized `PostgresConfig` object to connect to TimescaleDB, as detailed in `timescaledb_integration_guide.md`.
         -   *Note (2025-05-23): Refactored `storage/db.py`, `storage/postgres_sink.py`, and `cli.py` to achieve this. `PostgresSink` now takes `PostgresConfig`, uses correct table `raw_submissions`, and aligns with Alembic-managed schema.* 
     -   [x] **Crucially**: Remove any `metadata.create_all()` calls from scraper code related to the TimescaleDB sink. Scrapers should assume tables exist. *(Achieved by refactoring `PostgresSink` not to manage schema)*
--   [ ] **3.2. Test Scraper Data Ingestion**
-    -   [ ] Run the scraper service.
-    -   [ ] Verify data is being written to `raw_submissions` in TimescaleDB.
-    -   [ ] Check for any connection or ORM errors related to schema mismatches (should not occur if models align with Alembic migrations).
--   [ ] **3.3. Implement Idempotent Writes (if not already robust)**
-    -   [ ] Ensure scraper write operations to TimescaleDB are idempotent (e.g., using `sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_nothing()`).
+-   [x] **3.2. Test Scraper Data Ingestion**
+    -   [x] Run the scraper service.
+    -   [x] Verify data is being written to `raw_submissions` in TimescaleDB.
+    -   [x] Check for any connection or ORM errors related to schema mismatches (should not occur if models align with Alembic migrations).
+-   [x] **3.3. Implement Idempotent Writes (if not already robust)**
+    -   [x] Ensure scraper write operations to TimescaleDB are idempotent (e.g., using `sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_nothing()`).
 
 ## Phase 4: Documentation, Testing & Refinement
 
--   [ ] **4.1. Update Project `README.md`**
+-   [x] **4.1. Update Project `README.md`**
     -   [x] Document the Alembic migration process for initial DB setup (done).
     -   [x] Update project structure to include `alembic/` directory and `alembic.ini` (done).
--   [ ] **4.2. Update `reddit_scraper/README.md`**
+-   [x] **4.2. Update `reddit_scraper/README.md`**
     -   [x] Clarify that schema is managed by Alembic (done).
     -   [x] Reference `timescaledb_integration_guide.md` for connection details (done).
--   [ ] **4.3. Update `timescaledb/prd.md`**
+-   [x] **4.3. Update `timescaledb/prd.md`**
     -   [x] Reflect Alembic as the tool for schema and hypertable management (done).
--   [ ] **4.4. Update this `timescaledb/todo.md` and `timescaledb/todo_details.md`**
+-   [x] **4.4. Update this `timescaledb/todo.md` and `timescaledb/todo_details.md`**
     -   `[-]` This update is currently in progress for `todo.md`.
     -   `[ ]` Align `todo_details.md` with this new Alembic-focused task list.
 -   [ ] **4.5. Write Unit/Integration Tests for DB Interaction**

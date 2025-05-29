@@ -17,6 +17,7 @@ This document serves as a central index for all project documentation, organized
 
 ### Tests
 - [database_integration_test_plan.md](./common/tests/database_integration_test_plan.md) - Test strategy for database integration (SQLAlchemy sink, `RawEventORM`, TimescaleDB) across various data sources.
+- [timescaledb_test_strategy.md](./common/tests/timescaledb_test_strategy.md) - Consolidated test plan for TimescaleDB integration, combining and optimizing test approaches from multiple sources.
 
 ## Reddit Scraper
 

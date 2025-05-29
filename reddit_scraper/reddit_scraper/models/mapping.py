@@ -33,7 +33,7 @@ def submission_to_record(submission: Submission) -> SubmissionRecord:
     # Create the record
     record: SubmissionRecord = {
         "id": submission.id,
-        "created_utc": int(submission.created_utc),
+        "created_utc": submission.created_utc,
         "subreddit": submission.subreddit.display_name.lower(),
         "title": submission.title,
         "selftext": submission.selftext,

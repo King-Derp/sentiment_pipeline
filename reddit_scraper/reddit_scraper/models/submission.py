@@ -59,7 +59,7 @@ class SubmissionRecord(TypedDict):
     Corresponds to the data expected by various sinks.
     """
     id: str  # Reddit's base36 ID, e.g., "t3_q4jbfq" or just "q4jbfq"
-    created_utc: datetime  # Submission creation time (UTC)
+    created_utc: float  # Submission creation time (UTC) as a Unix timestamp (float)
     subreddit: str  # Subreddit name, e.g., "wallstreetbets"
     title: str  # Submission title
     selftext: Optional[str]  # Submission self-text (None if not a self-post or empty)

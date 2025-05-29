@@ -130,6 +130,7 @@ ehthumbs.db
 # Logs
 logs/
 *.log
+scraper_logs/
 
 # Data files (if large or not meant to be versioned - uncomment as needed)
 # data/raw/
@@ -139,3 +140,5 @@ logs/
 # timescaledb_data/
 
 /data
+
+/issues_note.md
