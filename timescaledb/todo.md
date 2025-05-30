@@ -71,8 +71,8 @@ This document outlines the step-by-step tasks required to implement TimescaleDB 
 -   [x] **4.3. Update `timescaledb/prd.md`**
     -   [x] Reflect Alembic as the tool for schema and hypertable management (done).
 -   [x] **4.4. Update this `timescaledb/todo.md` and `timescaledb/todo_details.md`**
-    -   `[-]` This update is currently in progress for `todo.md`.
-    -   `[ ]` Align `todo_details.md` with this new Alembic-focused task list.
+    -   `[x]` This update is currently in progress for `todo.md`.
+    -   `[x]` Align `todo_details.md` with this new Alembic-focused task list.
 -   [ ] **4.5. Write Unit/Integration Tests for DB Interaction**
     -   `[ ]` (Future) Tests for scraper writing to a test DB instance.
 -   [ ] **4.6. Review Connection Pooling**
