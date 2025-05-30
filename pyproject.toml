@@ -1,0 +1,63 @@
+[tool.poetry]
+name = "sentiment-pipeline"
+version = "0.1.0"
+description = "Sentiment analysis pipeline for Reddit data."
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+license = "MIT"
+packages = [{include = "reddit_scraper", from = "reddit_scraper"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+asyncpraw = "^7.7.1"
+pandas = "^2.1.0"
+python-dotenv = "^1.0.0"
+pyyaml = "^6.0.1"
+tqdm = "^4.66.1"
+aiohttp = "^3.9.0"
+typer = "^0.9.0"
+prometheus-client = "^0.17.1"
+python-dateutil = "^2.8.2"
+psycopg2-binary = "^2.9.9"
+sqlalchemy = "^2.0.27"
+alembic = "^1.13.1"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.10.0"
+ruff = "^0.1.0"
+mypy = "^1.6.0"
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.1"
+pre-commit = "^3.5.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+select = ["E", "F", "B", "I", "N", "UP", "ANN", "S", "A", "C4", "T20", "PT", "RET", "SIM"]
+ignore = ["ANN101", "ANN102"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+strict_optional = true
+
+[tool.poetry.scripts]
+scrape = "reddit_scraper.cli:main"
+targeted = "reddit_scraper.cli:scraper_app.commands[\"targeted\"].callback"
+deep = "reddit_scraper.cli:scraper_app.commands[\"deep\"].callback"
+hybrid = "reddit_scraper.cli:scraper_app.commands[\"hybrid\"].callback"
+pushshift = "reddit_scraper.cli:scraper_app.commands[\"pushshift\"].callback"

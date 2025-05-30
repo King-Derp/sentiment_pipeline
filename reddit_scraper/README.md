@@ -49,12 +49,14 @@ This tool collects Reddit submissions and comments from configured finance-relat
    cd reddit-finance-scraper
    ```
 
-2. Set up a virtual environment and install dependencies using Poetry:
+2. Navigate to the project root directory (e.g., `sentiment_pipeline/`).
+3. Set up a virtual environment and install dependencies using Poetry (this will use the `pyproject.toml` at the project root):
    ```bash
-   pip install poetry
+   # Ensure you are in the project root directory (e.g., sentiment_pipeline/)
+   pip install poetry  # If not already installed globally or in your environment
    poetry install
    ```
-   This will create a poetry.lock file that ensures consistent dependency versions across all environments.
+   This will use the `pyproject.toml` and create/update `poetry.lock` in the project root, managing dependencies for the entire project, including the Reddit Scraper.
 
 3. Create a `.env` file with your Reddit API credentials:
    ```bash

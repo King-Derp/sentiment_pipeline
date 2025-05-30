@@ -10,6 +10,7 @@ This document serves as a central index for all project documentation, organized
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Central document detailing project architecture, data models, component interactions, schema management, configuration, and deployment. |
 | [TASK.md](./TASK.md) | Current tasks and their status |
 | [TODO.md](./TODO.md) | General to-do items and future work |
+| [pyproject.toml](./pyproject.toml) | Project configuration file for Poetry (dependencies, scripts, build system) |
 | [scraper_implementation_rule.md](./scraper_implementation_rule.md) | Implementation rules and guidelines for scrapers |
 | [timescaledb_integration_guide.md](./timescaledb_integration_guide.md) | Comprehensive guide for TimescaleDB integration |
 

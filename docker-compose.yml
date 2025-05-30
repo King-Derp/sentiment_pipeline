@@ -21,8 +21,8 @@ services:
 
   reddit_scraper:
     build:
-      context: ./reddit_scraper
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./reddit_scraper/Dockerfile
     container_name: reddit_scraper_service
     depends_on:
       timescaledb:
@@ -30,7 +30,8 @@ services:
     env_file:
       - ./scraper.env # Ensure this file is created from scraper.env.example
     volumes:
-      - ./reddit_scraper:/app/reddit_scraper # For development: mounts local code into container
+      - ./reddit_scraper:/app/reddit_scraper # Mounts the host's reddit_scraper dir to /app/reddit_scraper
+      - ./reddit_scraper/config.yaml:/app/config.yaml # Explicitly mount config.yaml
       - ./scraper_logs:/app/logs
       - ./data:/app/data  # Persist CSV data on host
     networks:

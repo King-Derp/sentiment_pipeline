@@ -104,26 +104,188 @@ This document provides a consolidated test strategy for TimescaleDB integration 
 - Source-specific data factories (Reddit, etc.)
 - Edge case generators
 
+## Docker Test Environment for Integration Tests
+
+### Overview
+A dedicated Docker environment for TimescaleDB integration tests ensures consistent, reproducible test results across development environments while maintaining isolation from production databases.
+
+### Docker Test Environment Architecture
+
+#### Components
+1. **Test TimescaleDB Container**:
+   - Based on the same `timescale/timescaledb:latest-pg15-oss` image used in production
+   - Configured with a dedicated test database
+   - Ephemeral storage (data is not persisted between test runs)
+   - Exposed on a different port to avoid conflicts with development instances
+
+2. **Test Network**:
+   - Isolated Docker network for test containers
+   - Prevents interference with other running containers
+
+3. **Test Runner**:
+   - Python test environment with pytest
+   - Connects to the test TimescaleDB instance
+   - Executes Alembic migrations before tests
+   - Cleans up after tests complete
+
+### Docker Compose Configuration for Tests
+
+```yaml
+# docker-compose.test.yml
+services:
+  timescaledb_test:
+    image: timescale/timescaledb:latest-pg15-oss
+    container_name: timescaledb_test_service
+    ports:
+      - "${TEST_PG_PORT_HOST:-5434}:5432"
+    environment:
+      POSTGRES_USER: ${TEST_PG_USER:-test_user}
+      POSTGRES_PASSWORD: ${TEST_PG_PASSWORD:-test_password}
+      POSTGRES_DB: ${TEST_PG_DB:-sentiment_pipeline_test_db}
+    tmpfs:
+      - /var/lib/postgresql/data  # Use tmpfs for ephemeral storage
+    networks:
+      - test_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_PG_USER:-test_user} -d ${TEST_PG_DB:-sentiment_pipeline_test_db} -h localhost -p 5432"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  test_net:
+    driver: bridge
+```
+
+### Test Environment Variables
+
+Create a dedicated `.env.test` file with test-specific configuration:
+
+```
+# Test database configuration
+TEST_PG_USER=test_user
+TEST_PG_PASSWORD=test_password
+TEST_PG_DB=sentiment_pipeline_test_db
+TEST_PG_PORT_HOST=5434
+TEST_PG_PORT_CONTAINER=5432
+TEST_DATABASE_URL=postgresql://test_user:test_password@localhost:5434/sentiment_pipeline_test_db
+```
+
+### Test Execution Workflow
+
+1. **Start Test Environment**:
+   ```powershell
+   docker-compose -f docker-compose.test.yml up -d
+   ```
+
+2. **Wait for Database Readiness**:
+   - Use the healthcheck to ensure database is ready
+   - Alternatively, implement a Python-based readiness check
+
+3. **Run Migrations**:
+   - Execute Alembic migrations to set up the schema
+   - Use a dedicated test configuration
+
+4. **Execute Tests**:
+   - Run pytest with the test database URL
+   - Tests connect to the containerized database
+
+5. **Cleanup**:
+   ```powershell
+   docker-compose -f docker-compose.test.yml down
+   ```
+
+### Integration with CI/CD
+
+For continuous integration:
+
+1. **GitHub Actions / Jenkins / etc.**:
+   - Start the test containers
+   - Run the tests
+   - Capture test results and coverage
+   - Tear down the containers
+
+### Test Helper Scripts
+
+Create helper scripts to simplify test execution:
+
+1. **`run_integration_tests.ps1`**:
+   ```powershell
+   # Start test containers
+   docker-compose -f docker-compose.test.yml up -d
+
+   # Wait for database to be ready
+   $attempts = 0
+   $max_attempts = 30
+   while ($attempts -lt $max_attempts) {
+       $health = docker inspect --format='{{.State.Health.Status}}' timescaledb_test_service
+       if ($health -eq "healthy") {
+           break
+       }
+       Start-Sleep -Seconds 2
+       $attempts++
+   }
+
+   if ($attempts -eq $max_attempts) {
+       Write-Error "TimescaleDB test container failed to become healthy"
+       docker-compose -f docker-compose.test.yml down
+       exit 1
+   }
+
+   # Run tests
+   pytest timescaledb/tests/test_sqlalchemy_postgres_sink_integration.py -v
+
+   # Cleanup
+   docker-compose -f docker-compose.test.yml down
+   ```
+
+### Common Test Fixtures
+
+Update `/common/tests/conftest.py` to support the Docker test environment:
+
+```python
+@pytest.fixture(scope="session")
+def docker_test_db_url():
+    """Returns the database URL for the Docker test environment."""
+    return os.environ.get(
+        "TEST_DATABASE_URL", 
+        "postgresql://test_user:test_password@localhost:5434/sentiment_pipeline_test_db"
+    )
+
+@pytest.fixture(scope="session")
+def docker_db_engine(docker_test_db_url):
+    """Creates a SQLAlchemy engine connected to the Docker test database."""
+    engine = create_engine(docker_test_db_url)
+    yield engine
+    engine.dispose()
+```
+
 ## Implementation Order
 
-1. **Setup Common Test Infrastructure**:
-   - Create `/common/tests/conftest.py` with basic fixtures
+1. **Setup Docker Test Environment**:
+   - Create `docker-compose.test.yml`
+   - Create `.env.test` file
+   - Implement test helper scripts
+
+2. **Setup Common Test Infrastructure**:
+   - Create `/common/tests/conftest.py` with Docker-aware fixtures
    - Implement database setup utilities
 
-2. **Implement High Priority Unit Tests**:
+3. **Implement High Priority Unit Tests**:
    - Data mapping tests
    - Batch processing tests
    - Error handling tests
 
-3. **Implement High Priority Integration Tests**:
+4. **Implement High Priority Integration Tests**:
    - Single record write test
    - Idempotency test
 
-4. **Implement Medium Priority Tests**:
+5. **Implement Medium Priority Tests**:
    - Schema validation tests
    - Constraint tests
 
-5. **Document Test Coverage**:
+6. **Document Test Coverage**:
    - Update this document with test coverage decisions
    - Add notes to original test plans pointing to this consolidated strategy
 
@@ -156,4 +318,4 @@ This strategy reduces the number of tests from the original plans by:
 
 ## Conclusion
 
-This consolidated test strategy provides a balanced approach to testing TimescaleDB integration. It prioritizes critical functionality while reducing redundancy and maintaining a clear path for future expansion to additional data sources.
+This consolidated test strategy provides a balanced approach to testing TimescaleDB integration. It prioritizes critical functionality while reducing redundancy and maintaining a clear path for future expansion to additional data sources. The Docker test environment ensures tests are reproducible across development environments and CI/CD pipelines, providing consistent and reliable test results while maintaining isolation from development and production databases.
