@@ -70,7 +70,7 @@ class SQLAlchemyPostgresSink:
         try:
             # Log record details for debugging
             for i, record in enumerate(records[:3]):  # Log first 3 records
-                record_id = record['id'] if isinstance(record, dict) else record.id
+                record_id = record.get('id') if isinstance(record, dict) else getattr(record, 'id', None)
                 logger.warning(f"POSTGRES DEBUG: Record {i+1} ID: {record_id}")
                 
                 # Get more details about the record

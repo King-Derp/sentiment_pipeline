@@ -174,71 +174,109 @@ TEST_DATABASE_URL=postgresql://test_user:test_password@localhost:5434/sentiment_
 
 ### Test Execution Workflow
 
-1. **Start Test Environment**:
-   ```powershell
-   docker-compose -f docker-compose.test.yml up -d
-   ```
+Two PowerShell scripts have been implemented to automate the test execution workflow:
 
-2. **Wait for Database Readiness**:
-   - Use the healthcheck to ensure database is ready
-   - Alternatively, implement a Python-based readiness check
+#### Option 1: Full Lifecycle Management (Recommended for CI/CD)
 
-3. **Run Migrations**:
-   - Execute Alembic migrations to set up the schema
-   - Use a dedicated test configuration
+Use `run_docker_tests.ps1` to handle the complete test lifecycle:
 
-4. **Execute Tests**:
-   - Run pytest with the test database URL
-   - Tests connect to the containerized database
+```powershell
+# Run all tests in the current directory
+.\run_docker_tests.ps1
 
-5. **Cleanup**:
-   ```powershell
-   docker-compose -f docker-compose.test.yml down
-   ```
+# Run specific tests
+.\run_docker_tests.ps1 test_specific_file.py
+```
+
+This script:
+1. Loads environment variables from `.env.test`
+2. Starts the Docker test environment using `docker-compose.test.yml`
+3. Waits for the database to be healthy using the container's healthcheck
+4. Runs Alembic migrations to set up the schema
+5. Executes pytest with the specified test target
+6. Shuts down the Docker environment after tests complete
+
+#### Option 2: Development Workflow (For Rapid Iteration)
+
+Use `run_tests.ps1` when you want to run tests against an already running environment:
+
+```powershell
+# Run all tests in the current directory
+.\run_tests.ps1
+
+# Run specific tests
+.\run_tests.ps1 test_specific_file.py
+
+# Run tests and shut down the environment after completion
+.\run_tests.ps1 -ShutdownAfter
+```
+
+This script:
+1. Checks if the TimescaleDB test container is running
+2. If not running, it calls `run_docker_tests.ps1` to start the environment
+3. If running, it loads environment variables and runs the tests
+4. With the `-ShutdownAfter` flag, it will shut down the test environment after tests complete
+
+Both scripts ensure proper environment variable configuration and test execution.
 
 ### Integration with CI/CD
 
-For continuous integration:
+For continuous integration, use the `run_docker_tests.ps1` script which handles the complete test lifecycle:
 
-1. **GitHub Actions / Jenkins / etc.**:
-   - Start the test containers
-   - Run the tests
-   - Capture test results and coverage
-   - Tear down the containers
+```powershell
+# In CI/CD pipeline
+.\run_docker_tests.ps1
+```
 
-### Test Helper Scripts
+This script is designed to be self-contained and will:
 
-Create helper scripts to simplify test execution:
+1. Start a clean test environment
+2. Run all tests
+3. Properly clean up resources
+4. Return appropriate exit codes for CI/CD pipeline status
 
-1. **`run_integration_tests.ps1`**:
+The script can be integrated into any CI/CD system that supports PowerShell execution.
+
+### Implemented Test Helper Scripts
+
+The following PowerShell scripts have been implemented to simplify test execution:
+
+1. **`run_docker_tests.ps1`**:
    ```powershell
-   # Start test containers
-   docker-compose -f docker-compose.test.yml up -d
-
-   # Wait for database to be ready
-   $attempts = 0
-   $max_attempts = 30
-   while ($attempts -lt $max_attempts) {
-       $health = docker inspect --format='{{.State.Health.Status}}' timescaledb_test_service
-       if ($health -eq "healthy") {
-           break
-       }
-       Start-Sleep -Seconds 2
-       $attempts++
-   }
-
-   if ($attempts -eq $max_attempts) {
-       Write-Error "TimescaleDB test container failed to become healthy"
-       docker-compose -f docker-compose.test.yml down
-       exit 1
-   }
-
-   # Run tests
-   pytest timescaledb/tests/test_sqlalchemy_postgres_sink_integration.py -v
-
-   # Cleanup
-   docker-compose -f docker-compose.test.yml down
+   # Run all tests with full lifecycle management
+   .\run_docker_tests.ps1
+   
+   # Run specific test file
+   .\run_docker_tests.ps1 test_specific_file.py
    ```
+   - Handles the complete test lifecycle (start → test → shutdown)
+   - Ideal for CI/CD or one-off test runs
+   - Loads environment variables from `.env.test`
+   - Starts the Docker test environment
+   - Waits for the database to become healthy
+   - Runs Alembic migrations
+   - Executes pytest with the specified test target
+   - Shuts down the Docker environment after tests complete
+   - Returns the pytest exit code for proper CI/CD integration
+
+2. **`run_tests.ps1`**:
+   ```powershell
+   # Run all tests against an existing environment
+   .\run_tests.ps1
+   
+   # Run specific test file
+   .\run_tests.ps1 test_specific_file.py
+   
+   # Run tests and shut down the environment after completion
+   .\run_tests.ps1 -ShutdownAfter
+   ```
+   - Designed for development workflow when iterating quickly
+   - Checks if TimescaleDB test container is running
+   - If container is not running, calls `run_docker_tests.ps1`
+   - If container is running, runs tests against it
+   - With `-ShutdownAfter` flag, shuts down the environment after tests
+   - Loads environment variables from `.env.test`
+   - Returns the pytest exit code
 
 ### Common Test Fixtures
 

@@ -4,7 +4,8 @@
 
 # Parse command line arguments
 param(
-    [string]$TestTarget = "tests"  # Default to running all tests
+    [string]$TestTarget = ".",  # Default to running all tests in the current directory
+    [switch]$ShutdownAfter = $false  # Whether to shut down the test environment after tests complete
 )
 
 # Display header
@@ -46,6 +47,9 @@ if ($containerRunning -ne "timescaledb_test_service") {
     }
 
     # Construct TEST_DATABASE_URL from loaded env vars
+    if (-not $env:TEST_PG_HOST) {
+        $env:TEST_PG_HOST = "localhost"
+    }
     $env:TEST_DATABASE_URL = "postgresql://$($env:TEST_PG_USER):$($env:TEST_PG_PASSWORD)@$($env:TEST_PG_HOST):$($env:TEST_PG_PORT_HOST)/$($env:TEST_PG_DB)"
 
     # Display the test environment configuration
@@ -54,6 +58,15 @@ if ($containerRunning -ne "timescaledb_test_service") {
 
     # Run the tests with pytest
     Write-Host "Running tests with target: $TestTarget..." -ForegroundColor Cyan
+    
+    # Use the correct path to tests directory
+    $testsDir = Join-Path -Path $PSScriptRoot -ChildPath "tests"
+    if (-not (Test-Path $testsDir)) {
+        Write-Error "Tests directory not found at: $testsDir"
+        exit 1
+    }
+    
+    # Run the tests
     Push-Location (Join-Path -Path $PSScriptRoot -ChildPath "tests")
     python -m pytest $TestTarget -v
     $testResult = $LASTEXITCODE
@@ -63,6 +76,14 @@ if ($containerRunning -ne "timescaledb_test_service") {
         Write-Host "Tests completed successfully!" -ForegroundColor Green
     } else {
         Write-Host "Tests failed with exit code $testResult" -ForegroundColor Red
+    }
+    
+    # Shut down the test environment if requested
+    if ($ShutdownAfter) {
+        Write-Host "Shutting down test environment..." -ForegroundColor Cyan
+        $composePath = Join-Path -Path $PSScriptRoot -ChildPath "..\docker-compose.test.yml"
+        docker-compose -f $composePath down --remove-orphans
+        Write-Host "Test environment shut down." -ForegroundColor Green
     }
     
     # Return the exit code from pytest

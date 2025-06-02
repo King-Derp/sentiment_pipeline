@@ -1,0 +1,24 @@
+services:
+  timescaledb_test:
+    image: timescale/timescaledb:latest-pg15-oss
+    container_name: timescaledb_test_service
+    ports:
+      - "${TEST_PG_PORT_HOST:-5434}:5432"
+    environment:
+      POSTGRES_USER: ${TEST_PG_USER:-test_user}
+      POSTGRES_PASSWORD: ${TEST_PG_PASSWORD:-test_password}
+      POSTGRES_DB: ${TEST_PG_DB:-sentiment_pipeline_test_db}
+    tmpfs:
+      - /var/lib/postgresql/data  # Use tmpfs for ephemeral storage
+    networks:
+      - test_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_PG_USER:-test_user} -d ${TEST_PG_DB:-sentiment_pipeline_test_db} -h localhost -p 5432"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  test_net:
+    driver: bridge

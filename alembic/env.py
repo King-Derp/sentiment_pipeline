@@ -1,5 +1,7 @@
 import os
 import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -31,39 +33,59 @@ if config.config_file_name is not None:
 # Import your Base and specific models
 # This assumes your models are defined in a way that Base.metadata will capture them.
 # Adjust the import path according to your project structure.
-from reddit_scraper.reddit_scraper.config import Config
-from reddit_scraper.reddit_scraper.models.base import Base # Ensure Base is imported
-from reddit_scraper.reddit_scraper.models.submission import RawEventORM # Updated import
+# Import the correct modules based on the project structure
+try:
+    from reddit_scraper.config import Config
+    from reddit_scraper.models.base import Base  # Ensure Base is imported
+    from reddit_scraper.models.submission import RawEventORM  # Updated import
+except ImportError as e:
+    print(f"Import error in Alembic env.py: {e}")
+    # Fallback to a simpler approach for test environments
+    # In test environments, we may not need the full config
+    from sqlalchemy.ext.declarative import declarative_base
+    Base = declarative_base()
 
 # For TimescaleDB, ensure the models are loaded so metadata is correct
 # You might need to import all models that are part of Base.metadata
 # For example, if you have other ORM models, import them here as well.
 
-# Define the path to the application's main configuration file
-# PROJECT_ROOT is f:\Coding\sentiment_pipeline
-# config.yaml is in f:\Coding\sentiment_pipeline\reddit_scraper\
-APP_CONFIG_YAML_PATH = os.path.join(PROJECT_ROOT, "reddit_scraper", "config.yaml")
-
-# Load application configuration to get database URL
-app_config = Config.from_files(APP_CONFIG_YAML_PATH)
-
-# Construct the database URL from your loaded configuration
-# For Alembic, we typically want to connect to the DB as it's exposed on the host machine,
-# not necessarily how it's configured for services within a Docker network.
-if app_config.postgres and app_config.postgres.enabled:
-    DB_USER = os.getenv('PG_USER', app_config.postgres.user)
-    DB_PASSWORD = os.getenv('PG_PASSWORD', app_config.postgres.password) # PG_PASSWORD should be loaded by Config.from_files via dotenv
-    DB_HOST_FOR_ALEMBIC = "localhost" # Alembic runs on the host, connects to localhost
-    DB_PORT_FOR_ALEMBIC = os.getenv('PG_PORT_HOST', '5433') # Use the host-mapped port
-    DB_NAME = os.getenv('PG_DB', app_config.postgres.database)
-    
-    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST_FOR_ALEMBIC}:{DB_PORT_FOR_ALEMBIC}/{DB_NAME}"
+# Check if we're running in a test environment first
+# If ALEMBIC_DATABASE_URL is set, use that directly
+if os.environ.get("ALEMBIC_DATABASE_URL"):
+    print(f"Using database URL from ALEMBIC_DATABASE_URL environment variable")
+    DATABASE_URL = os.environ.get("ALEMBIC_DATABASE_URL")
 else:
-    # Fallback or error if Postgres is not configured/enabled, 
-    # or provide a default URL if appropriate for your setup.
-    # For example, you might raise an error or use a dummy URL if DB is essential.
-    print("PostgreSQL is not enabled or configured in app_config. Check config.yaml and .env")
-    DATABASE_URL = "sqlite:///./alembic_dummy.db" # Example fallback, adjust as needed
+    try:
+        # Define the path to the application's main configuration file
+        APP_CONFIG_YAML_PATH = os.path.join(PROJECT_ROOT, "reddit_scraper", "config.yaml")
+        
+        # Try to load application configuration
+        app_config = Config.from_files(APP_CONFIG_YAML_PATH)
+        
+        # Construct the database URL from the loaded configuration
+        if hasattr(app_config, 'postgres') and app_config.postgres and getattr(app_config.postgres, 'enabled', False):
+            DB_USER = os.getenv('PG_USER', app_config.postgres.user)
+            DB_PASSWORD = os.getenv('PG_PASSWORD', app_config.postgres.password)
+            DB_HOST_FOR_ALEMBIC = "localhost"  # Alembic runs on the host
+            DB_PORT_FOR_ALEMBIC = os.getenv('PG_PORT_HOST', '5433')  # Use the host-mapped port
+            DB_NAME = os.getenv('PG_DB', app_config.postgres.database)
+            
+            DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST_FOR_ALEMBIC}:{DB_PORT_FOR_ALEMBIC}/{DB_NAME}"
+        else:
+            # Fallback for when postgres config is not available
+            print("PostgreSQL is not enabled or configured in app_config. Using environment variables.")
+            DATABASE_URL = os.environ.get(
+                "DATABASE_URL_LOCAL",
+                "postgresql://postgres:postgres@localhost:5432/sentiment_pipeline_db"
+            )
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        # Fallback to environment variables
+        print("Falling back to environment variables for database connection")
+        DATABASE_URL = os.environ.get(
+            "DATABASE_URL_LOCAL", 
+            os.environ.get("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sentiment_pipeline_db")
+        )
 
 # Set the sqlalchemy.url in the Alembic config object
 # This will be used by Alembic to connect to the database.

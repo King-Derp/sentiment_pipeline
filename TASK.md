@@ -55,6 +55,21 @@
 - **Review `timescaledb_integration_guide.md`** (Completed: 2024-07-27)
     - Verified that primary key and schema information correctly defers to `ARCHITECTURE.md`.
     - Confirmed general consistency with `ARCHITECTURE.md` (table name, ORM model, Alembic schema management).
+- **Fix all tests in `timescaledb/tests`** (Completed: 2025-06-02)
+  - Created PowerShell scripts to automate the test environment lifecycle:
+    - `run_docker_tests.ps1`: Handles the complete test lifecycle (start → test → shutdown)
+    - `run_tests.ps1`: For development workflow with option to keep environment running
+  - Fixed environment variable loading from `.env.test`
+  - Implemented proper test path resolution
+  - Fixed database URL construction
+  - Added Alembic migration execution
+  - Added container health checking
+  - Successfully ran all 32 integration tests with both scripts
+- **Refactor reddit_scraper/pyproject.toml to root and update docs** (Completed: 2025-05-30)
+  - Read DOCUMENTATION.md and all mentioned documents.
+  - Moved reddit_scraper/pyproject.toml to the project root.
+  - Updated all relevant files and documents (DOCUMENTATION.md, reddit_scraper/README.md, reddit_scraper/Dockerfile, docker-compose.yml) to reflect this change.
+  - Ran `poetry lock` and `poetry install` successfully in the root directory.
 
 ## Current / Next Tasks
 

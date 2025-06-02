@@ -101,29 +101,28 @@ Write-Host "Using TEST_DATABASE_URL for Pytest: $env:TEST_DATABASE_URL" -Foregro
 # Run the tests
 Write-Host "Running integration tests..." -ForegroundColor Cyan
 try {
-    # Determine the target for pytest
-    # CWD for this script is f:\Coding\sentiment_pipeline\timescaledb
+    # Parse command line arguments
     $pytestTarget = if ($args.Count -gt 0) {
-        $args[0] # e.g., user provides "tests" or "tests/specific_file.py" (paths relative to CWD)
+        $args[0] # e.g., user provides a specific test file
     } else {
-        "tests/test_docker_integration.py" # Default, relative to CWD (e.g., f:\Coding\sentiment_pipeline\timescaledb\tests\test_docker_integration.py)
+        "." # Default to running all tests in the current directory
     }
     
     Write-Host "Running pytest with target: $pytestTarget" -ForegroundColor Yellow
-    $pytestLogFilePath = Join-Path -Path $PSScriptRoot -ChildPath "pytest_output.log"
-    Write-Host "Pytest output will be logged to: $pytestLogFilePath" -ForegroundColor Cyan
     
-    # Run pytest and redirect all output to the log file
-    python -m pytest $pytestTarget -v *>$pytestLogFilePath
-    
-    $testResult = $LASTEXITCODE
-
-    # Advise user to check the log file, especially on failure
-    if ($testResult -ne 0) {
-        Write-Warning "Pytest exited with code $testResult. Check $pytestLogFilePath for details."
-    } else {
-        Write-Host "Pytest completed successfully. Log available at $pytestLogFilePath" -ForegroundColor Green
+    # Use the correct path to tests directory
+    $testsDir = Join-Path -Path $PSScriptRoot -ChildPath "tests"
+    if (-not (Test-Path $testsDir)) {
+        Write-Error "Tests directory not found at: $testsDir"
+        docker-compose -f $composePath down --remove-orphans
+        exit 1
     }
+    
+    # Run pytest and show output directly in the console
+    Push-Location (Join-Path -Path $PSScriptRoot -ChildPath "tests")
+    python -m pytest $pytestTarget -v
+    $testResult = $LASTEXITCODE
+    Pop-Location
     
     if ($testResult -eq 0) {
         Write-Host "Integration tests completed successfully!" -ForegroundColor Green
