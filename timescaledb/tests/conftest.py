@@ -2,9 +2,15 @@
 Pytest fixtures for TimescaleDB tests.
 """
 import os
+import sys
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+
+# Add the project root to the Python path so that modules can be imported
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Import models as needed
 # from timescaledb.models import Base, RawEventORM
@@ -24,7 +30,7 @@ def test_db_url():
     
     # Otherwise, derive from the main DATABASE_URL_LOCAL but with a test suffix
     base_url = os.environ.get("DATABASE_URL_LOCAL", 
-                             "postgresql://test_user:test_password@localhost:5433/sentiment_pipeline_db")
+                             "postgresql://test_user:test_password@localhost:5434/sentiment_pipeline_test_db")
     
     # Replace the database name with a test-specific one
     if "?" in base_url:
@@ -72,37 +78,14 @@ def db_session(db_session_factory):
 @pytest.fixture(scope="session")
 def initialize_test_db(db_engine):
     """
-    Initializes the test database with the required schema.
-    
-    This fixture should be used by test modules that require a database.
-    It will run Alembic migrations to set up the schema.
+    Ensures the test database engine is available.
+    Migrations are handled by the test execution script (run_docker_tests.ps1).
     """
-    # Import here to avoid circular imports
-    import subprocess
-    import sys
-    
-    # Run Alembic migrations on the test database
-    # Note: This assumes alembic.ini is in the project root
-    alembic_ini_path = os.path.join(os.path.dirname(__file__), "..", "..", "alembic.ini")
-    
-    # Create a custom alembic.ini for testing if needed
-    # For now, we'll just override the URL via environment variable
-    os.environ["ALEMBIC_DATABASE_URL"] = db_engine.url.render_as_string(hide_password=False)
-    
-    # Run the migration
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "alembic", "-c", alembic_ini_path, "upgrade", "head"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        print(f"Alembic migration output: {result.stdout}")
-    except subprocess.CalledProcessError as e:
-        print(f"Error running Alembic migrations: {e.stderr}")
-        raise
-    
-    yield
+    # The db_engine fixture already creates the engine.
+    # Migrations are handled by the run_docker_tests.ps1 script.
+    # This fixture now primarily serves as a dependency marker if needed
+    # and ensures that db_engine is ready.
+    yield db_engine
     
     # Cleanup can be added here if needed
     # For example, dropping the test database or specific tables
