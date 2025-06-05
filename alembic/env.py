@@ -36,14 +36,18 @@ if config.config_file_name is not None:
 # Import the correct modules based on the project structure
 try:
     from reddit_scraper.config import Config
-    from reddit_scraper.models.base import Base  # Ensure Base is imported
+    from reddit_scraper.models.base import Base as RedditScraperBase # Alias to avoid name collision
     from reddit_scraper.models.submission import RawEventORM  # Updated import
+    from sentiment_analyzer.models.base import Base as SentimentAnalyzerBase # Import sentiment models' base
+    # Import all sentiment ORM models to ensure they are registered with SentimentAnalyzerBase.metadata
+    from sentiment_analyzer.models import SentimentResultORM, SentimentMetricORM, DeadLetterEventORM
 except ImportError as e:
     print(f"Import error in Alembic env.py: {e}")
     # Fallback to a simpler approach for test environments
     # In test environments, we may not need the full config
     from sqlalchemy.ext.declarative import declarative_base
-    Base = declarative_base()
+    RedditScraperBase = declarative_base()
+    SentimentAnalyzerBase = declarative_base() # Also declare for fallback
 
 # For TimescaleDB, ensure the models are loaded so metadata is correct
 # You might need to import all models that are part of Base.metadata
@@ -67,7 +71,8 @@ else:
             DB_USER = os.getenv('PG_USER', app_config.postgres.user)
             DB_PASSWORD = os.getenv('PG_PASSWORD', app_config.postgres.password)
             DB_HOST_FOR_ALEMBIC = "localhost"  # Alembic runs on the host
-            DB_PORT_FOR_ALEMBIC = os.getenv('PG_PORT_HOST', '5433')  # Use the host-mapped port
+            _raw_db_port = os.getenv('PG_PORT_HOST', '5433')  # Use the host-mapped port
+            DB_PORT_FOR_ALEMBIC = _raw_db_port.split('#')[0].strip() # Clean potential comments
             DB_NAME = os.getenv('PG_DB', app_config.postgres.database)
             
             DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST_FOR_ALEMBIC}:{DB_PORT_FOR_ALEMBIC}/{DB_NAME}"
@@ -95,7 +100,8 @@ config.set_main_option('sqlalchemy.url', DATABASE_URL)
 # target_metadata = SubmissionORM.metadata # Old metadata
 # target_metadata = RawEventORM.metadata # Use the metadata from your specific model or Base
 # If you have multiple models under the same Base, Base.metadata is usually preferred:
-target_metadata = Base.metadata # Corrected to use Base.metadata for comprehensive schema detection
+# If you have multiple model sets, provide a list of their metadata
+target_metadata = [RedditScraperBase.metadata, SentimentAnalyzerBase.metadata]
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.

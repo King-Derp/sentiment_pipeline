@@ -70,6 +70,7 @@
   - Moved reddit_scraper/pyproject.toml to the project root.
   - Updated all relevant files and documents (DOCUMENTATION.md, reddit_scraper/README.md, reddit_scraper/Dockerfile, docker-compose.yml) to reflect this change.
   - Ran `poetry lock` and `poetry install` successfully in the root directory.
+- **Complete Phase 2 of Sentiment Analysis Service: Database Integration & Models** (Completed: 2025-06-05)
 
 ## Current / Next Tasks
 
@@ -120,6 +121,12 @@
   - `[x]` Task 1.2: Initialize Dependency Management
   - `[x]` Task 1.3: Basic Configuration Setup
   - `[x]` Task 1.4: Logging Setup
+
+### Sentiment Analysis Service Implementation (Phase 2)
+- **[x] Implement Phase 2: Database Integration & Models** (Added: 2025-06-05)
+  - `[x]` Task 2.1: Define ORM Models & Pydantic DTOs (Verified complete based on existing models and memories)
+  - `[x]` Task 2.2: Alembic Setup for Sentiment Tables (Verified complete based on existing migration and memories)
+  - `[x]` Task 2.3: Database Connection Utility (Created `utils/db_session.py`)
 
 ### Discovered During Work
 

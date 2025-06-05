@@ -11,11 +11,11 @@ This document outlines the step-by-step tasks required to implement the Sentimen
 ## Phase 1: Project Setup & Foundation (Sentiment Service Module) - COMPLETED
 
 - `[x]` **1.1: Create Service Directory Structure:**
-  - `[ ]` Create `sentiment_analyzer` main directory (e.g., `f:/Coding/sentiment_pipeline/sentiment_analyzer/`).
-  - `[ ]` Inside `sentiment_analyzer`, create subdirectories: `core` (for main logic), `models` (for DTOs/ORMs), `api`, `config`, `tests`, `utils`.
-  - `[ ]` Add `__init__.py` files to make them Python packages.
+  - `[x]` Create `sentiment_analyzer` main directory (e.g., `f:/Coding/sentiment_pipeline/sentiment_analyzer/`).
+  - `[x]` Inside `sentiment_analyzer`, create subdirectories: `core` (for main logic), `models` (for DTOs/ORMs), `api`, `config`, `tests`, `utils`.
+  - `[x]` Add `__init__.py` files to make them Python packages.
 - `[x]` **1.2: Initialize Dependency Management:**
-  - `[ ]` Create/update `requirements.txt` or `pyproject.toml` (if using Poetry/PDM) for the service, including:
+  - `[x]` Create/update `requirements.txt` or `pyproject.toml` (if using Poetry/PDM) for the service, including:
     - `fastapi`, `uvicorn`, `pydantic`
     - `sqlalchemy`, `asyncpg` (for TimescaleDB)
     - `alembic` (for migrations specific to sentiment tables)
@@ -25,25 +25,25 @@ This document outlines the step-by-step tasks required to implement the Sentimen
     - `python-dotenv`, `pyyaml` (for configuration)
     - `pytest`, `httpx` (for testing)
 - `[x]` **1.3: Basic Configuration Setup:**
-  - `[ ]` Create `sentiment_analyzer/config/config.yaml` (with placeholders for DB, model paths, etc.).
-  - `[ ]` Implement a utility to load configuration from YAML and environment variables (e.g., in `sentiment_analyzer/config/loader.py`).
+  - `[x]` Create `sentiment_analyzer/config/config.yaml` (with placeholders for DB, model paths, etc.).
+  - `[x]` Implement a utility to load configuration from YAML and environment variables (e.g., in `sentiment_analyzer/config/loader.py`).
 - `[x]` **1.4: Logging Setup:**
-  - `[ ]` Implement a centralized logging configuration (e.g., in `sentiment_analyzer/utils/logging_setup.py`) for structured JSON logging.
+  - `[x]` Implement a centralized logging configuration (e.g., in `sentiment_analyzer/utils/logging_setup.py`) for structured JSON logging.
 
-## Phase 2: Database Integration & Models
+## Phase 2: Database Integration & Models - COMPLETED
 
-- `[ ]` **2.1: Define ORM Models & Pydantic DTOs:** (in `sentiment_analyzer/models/`)
-  - `[ ]` Create `SentimentResultORM` (SQLAlchemy model for `sentiment_results` table).
-  - `[ ]` Create `SentimentMetricORM` (SQLAlchemy model for `sentiment_metrics` table).
-  - `[ ]` Create `SentimentResultDTO` (Pydantic model for API and internal data transfer).
-  - `[ ]` Create `SentimentMetricDTO` (Pydantic model for API).
-  - `[ ]` Create Pydantic models for API request bodies (e.g., `AnalyzeTextRequest`).
-- `[ ]` **2.2: Alembic Setup for Sentiment Tables:**
-  - `[ ]` Initialize Alembic within the `sentiment_analyzer` module if it's to manage its own migrations (or integrate with a project-wide Alembic setup).
-  - `[ ]` Create initial Alembic migration script to create `sentiment_results` and `sentiment_metrics` hypertables (as defined in `design.md`).
-  - `[ ]` Create Alembic migration script for `dead_letter_events` table.
-- `[ ]` **2.3: Database Connection Utility:**
-  - `[ ]` Create a utility (e.g., `sentiment_analyzer/utils/db_session.py`) to manage asynchronous database sessions using SQLAlchemy and `asyncpg`.
+- `[x]` **2.1: Define ORM Models & Pydantic DTOs:** (in `sentiment_analyzer/models/`)
+  - `[x]` Create `SentimentResultORM` (SQLAlchemy model for `sentiment_results` table).
+  - `[x]` Create `SentimentMetricORM` (SQLAlchemy model for `sentiment_metrics` table).
+  - `[x]` Create `SentimentResultDTO` (Pydantic model for API and internal data transfer).
+  - `[x]` Create `SentimentMetricDTO` (Pydantic model for API).
+  - `[x]` Create Pydantic models for API request bodies (e.g., `AnalyzeTextRequest`).
+- `[x]` **2.2: Alembic Setup for Sentiment Tables:**
+  - `[x]` Initialize Alembic within the `sentiment_analyzer` module if it's to manage its own migrations (or integrate with a project-wide Alembic setup).
+  - `[x]` Create initial Alembic migration script to create `sentiment_results` and `sentiment_metrics` hypertables (as defined in `design.md`).
+  - `[x]` Create Alembic migration script for `dead_letter_events` table.
+- `[x]` **2.3: Database Connection Utility:**
+  - `[x]` Create a utility (e.g., `sentiment_analyzer/utils/db_session.py`) to manage asynchronous database sessions using SQLAlchemy and `asyncpg`.
 
 ## Phase 3: Core Components Implementation (in `sentiment_analyzer/core/`)
 

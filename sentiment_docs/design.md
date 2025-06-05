@@ -228,25 +228,27 @@ This service expects each row in `raw_events` to match `RawEventDTO` / `RawEvent
 
 ```sql
 CREATE TABLE sentiment_results (
-  id              SERIAL PRIMARY KEY,
-  event_id        TEXT              NOT NULL,
-  occurred_at     TIMESTAMPTZ        NOT NULL,
+  id              BIGSERIAL, -- Changed from SERIAL to align with BigInteger in ORM
+  event_id        BIGINT            NOT NULL, -- Changed from TEXT to BIGINT
+  occurred_at     TIMESTAMPTZ       NOT NULL,
   source          TEXT              NOT NULL,
   source_id       TEXT              NOT NULL,
   sentiment_score FLOAT             NOT NULL,
   sentiment_label TEXT              NOT NULL,
   confidence      FLOAT,
-  processed_at    TIMESTAMPTZ   DEFAULT NOW(),
+  processed_at    TIMESTAMPTZ   DEFAULT NOW() NOT NULL,
   model_version   TEXT              NOT NULL,
   raw_text        TEXT,
-
-  CONSTRAINT fk_raw_event
-    FOREIGN KEY (event_id, occurred_at)
-    REFERENCES raw_events (id, occurred_at)
+  PRIMARY KEY (id, processed_at) -- Composite PK for hypertable
 );
 
--- Convert to a hypertable on the time dimension
-SELECT create_hypertable('sentiment_results', 'occurred_at');
+-- Note: event_id and occurred_at logically reference raw_events(id, occurred_at).
+-- A database foreign key constraint is NOT enforced due to TimescaleDB limitations
+-- on foreign keys between two hypertables. Referential integrity is managed
+-- at the application level.
+
+-- Convert to a hypertable on the time dimension (processed_at)
+SELECT create_hypertable('sentiment_results', 'processed_at');
 
 -- Indexes for common query patterns
 CREATE INDEX idx_sentiment_src_time
@@ -309,6 +311,55 @@ SELECT create_hypertable('sentiment_metrics', 'time_bucket');
 
 - **Handling New Labels:**  
   - If a sentiment model introduces a brand‐new label (e.g. `"very_positive"`), the first `INSERT … ON CONFLICT …` simply creates a new row for `(time_bucket, source, source_id, 'very_positive')`. Future events with `"very_positive"` will update that same row automatically—no schema change needed.
+
+#### 3.2.3 `dead_letter_events` Table
+
+This table stores events that could not be processed by the sentiment analysis pipeline, along with error details. This aids in debugging and potential reprocessing.
+
+```sql
+CREATE TABLE dead_letter_events (
+  id                    SERIAL       PRIMARY KEY,
+  event_id              TEXT         NOT NULL,
+  occurred_at           TIMESTAMPTZ  NOT NULL,
+  source                TEXT         NOT NULL,
+  source_id             TEXT         NOT NULL,
+  event_payload         JSONB,
+  processing_component  TEXT,
+  error_msg             TEXT,
+  failed_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Convert to a hypertable on the time dimension
+SELECT create_hypertable('dead_letter_events', 'failed_at');
+
+-- Indexes
+CREATE INDEX idx_dle_event_id_occurred_at ON dead_letter_events (event_id, occurred_at);
+CREATE INDEX idx_dle_failed_at ON dead_letter_events (failed_at DESC);
+```
+
+- **`event_payload` (`JSONB`):** Stores the original raw event data that caused the failure.
+- **`processing_component` (`TEXT`):** Identifies the specific part of the sentiment service where the error occurred (e.g., "preprocessor", "analyzer_finbert").
+- **`failed_at` (`TIMESTAMPTZ`):** Timestamp of when the processing failure was recorded. This is used as the time dimension for the hypertable.
+- **Indexes:** Created for common query patterns, such as looking up by original event identifiers or by failure time.
+- **Hypertable:** Facilitates efficient data management and querying, especially if the volume of dead-lettered events becomes significant.
+
+
+### 3.3 TimescaleDB Specific Considerations
+
+#### Hypertable Foreign Key Constraints: Hypertable-to-Hypertable Limitation
+
+TimescaleDB, as of the current understanding and documentation, **does not support foreign key constraints where both the referencing table and the referenced table are hypertables.**
+
+For example, a direct foreign key from `sentiment_results` (hypertable) to `raw_events` (hypertable) cannot be established at the database level.
+
+**Implications for this Service:**
+- The relationship between `sentiment_results.event_id, sentiment_results.occurred_at` and `raw_events.id, raw_events.occurred_at` is a **logical relationship**.
+- Referential integrity (ensuring that `event_id` in `sentiment_results` corresponds to a valid `id` in `raw_events`) must be managed at the **application level**.
+- This can involve:
+    - Ensuring data consistency during the write process within the sentiment analysis service.
+    - Periodic checks or cleanup jobs if strict integrity is required over time, though this is not planned for the initial implementation given the single-writer nature for `sentiment_results`.
+
+This limitation means that while the ORM models and migration scripts will define columns like `event_id` with the correct data type (`BIGINT`) to match the intended referenced column in `raw_events`, the database itself will not enforce this link with a foreign key constraint.
 
 ---
 
