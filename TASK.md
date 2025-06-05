@@ -113,6 +113,14 @@
         *   Verified that primary key and schema information correctly defers to `ARCHITECTURE.md`.
         *   Confirmed general consistency with `ARCHITECTURE.md` (table name, ORM model, Alembic schema management).
 
+
+### Sentiment Analysis Service Implementation (Phase 1)
+- **[x] Implement Phase 1: Project Setup & Foundation** (Added: 2025-06-05)
+  - `[x]` Task 1.1: Create Service Directory Structure
+  - `[x]` Task 1.2: Initialize Dependency Management
+  - `[x]` Task 1.3: Basic Configuration Setup
+  - `[x]` Task 1.4: Logging Setup
+
 ### Discovered During Work
 
 *   **Reddit Scraper Observability (from `reddit_scraper/todo.md` - Added: 2024-07-27):**

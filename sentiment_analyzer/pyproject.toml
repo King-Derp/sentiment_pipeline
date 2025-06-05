@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "sentiment-analyzer"
+version = "0.1.0"
+description = "Sentiment Analysis Service for the Sentiment Pipeline project"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.23.2"}
+pydantic = "^2.5.2"
+sqlalchemy = "^2.0.23"
+asyncpg = "^0.29.0"
+alembic = "^1.13.0"
+spacy = "^3.7.2"  # Remember to download models, e.g., python -m spacy download en_core_web_lg
+transformers = "^4.35.2"
+torch = "^2.1.1" # CPU version, for GPU: torch --index-url https://download.pytorch.org/whl/cu118
+langdetect = "^1.0.9"
+python-dotenv = "^1.0.0"
+pyyaml = "^6.0.1"
+python-json-logger = "^2.0.7"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+httpx = "^0.25.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

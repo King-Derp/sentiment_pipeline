@@ -1,0 +1,27 @@
+# Example application configuration for Sentiment Analyzer Service
+# These values can be overridden by environment variables or .env file.
+
+# Application settings
+APP_NAME: "SentimentAnalyzerServiceYAML" # Example to show it can be different
+DEBUG: false
+API_HOST: "127.0.0.1"
+API_PORT: 8001
+
+# Database settings (defaults, ideally secrets come from .env)
+DB_HOST: "localhost_yaml"
+DB_PORT: 5432
+DB_USER: "user_yaml"
+# DB_PASSWORD: "password_yaml" # Avoid storing passwords in YAML
+DB_NAME: "sentiment_db_yaml"
+
+# Model settings
+SPACY_MODEL_NAME: "en_core_web_sm" # Smaller model for example
+FINBERT_MODEL_NAME: "ProsusAI/finbert"
+USE_GPU_IF_AVAILABLE: false
+
+# Batch processing settings
+EVENT_FETCH_INTERVAL_SECONDS: 120
+EVENT_FETCH_BATCH_SIZE: 50
+
+# Logging configuration path
+LOGGING_CONFIG_PATH: "config/logging_config.yaml" # Relative to service root
