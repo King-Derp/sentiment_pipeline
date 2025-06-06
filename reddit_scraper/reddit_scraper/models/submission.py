@@ -37,7 +37,10 @@ class RawEventORM(Base):
     occurred_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True, nullable=False, comment="Timestamp when the event originally occurred, part of composite PK")
     payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="Full event payload as JSON")
     ingested_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), comment="Timestamp when the event was ingested into the system")
-    processed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=expression.false(), comment="Flag indicating if the event has been processed")
+
+    # Fields for sentiment analysis processing state
+    processed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=expression.false(), index=True, comment="Flag indicating if sentiment analysis has been performed on this event")
+    processed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True, comment="Timestamp when sentiment analysis was completed for this event")
 
     __table_args__ = (
         # PrimaryKeyConstraint('id', 'occurred_at'), # SQLAlchemy infers composite PK from multiple primary_key=True columns
@@ -45,6 +48,7 @@ class RawEventORM(Base):
         Index('ix_raw_events_occurred_at', 'occurred_at'),
         # Optional: Index for common queries if source and source_id are often queried together without occurred_at
         # Index('ix_raw_events_source_source_id', 'source', 'source_id'), 
+        Index('ix_raw_events_processed_occurred_at', 'processed', 'occurred_at', postgresql_where=(expression.column('processed') == False)), # Index for sentiment analysis fetcher
         {'comment': 'Stores raw event data from various sources. Partitioned by occurred_at.'}
     )
 

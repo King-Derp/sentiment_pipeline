@@ -5,9 +5,32 @@ These models are used for API request/response validation and internal data tran
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict # Added Dict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Json
+from typing import Any # Added for RawEventDTO payload
+
+
+class RawEventDTO(BaseModel):
+    """
+    DTO for raw event data, typically sourced from scrapers.
+
+    Mirrors RawEventORM and is used for data transfer, especially for the Data Fetcher.
+    """
+    id: int
+    event_id: str
+    occurred_at: datetime
+    source: str
+    source_id: Optional[str] = None
+    payload: Dict[str, Any]
+    ingested_at: datetime
+    processed: bool = False
+    processed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 
 
 class SentimentResultDTO(BaseModel):

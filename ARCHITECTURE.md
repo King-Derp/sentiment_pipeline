@@ -51,11 +51,14 @@ The Sentiment Pipeline project is designed to scrape data from various sources (
     *   `event_type` (TEXT): Type of event (e.g., "submission", "comment").
     *   `payload` (JSONB): The raw data payload from the source, stored as a JSON object.
     *   `ingested_at` (TIMESTAMPTZ): Timestamp when the event was ingested into the pipeline (defaults to `NOW()`).
-    *   `processed` (BOOLEAN): Flag indicating if the event has been processed by downstream services (defaults to `FALSE`).
+    *   `processed` (BOOLEAN): Flag indicating if the event has been processed by sentiment analysis (defaults to `FALSE`).
+    *   `processed_at` (TIMESTAMPTZ): Timestamp when sentiment analysis was completed for this event (NULL until processed).
 *   **Primary Key (Composite):** (`id`, `occurred_at`)
 *   **Unique Constraint:** (`source`, `source_id`, `event_type`, `id`, `occurred_at`) - This ensures idempotency for records. *Note: The exact fields in the unique constraint might vary slightly based on the latest Alembic migration but generally cover these to uniquely identify an event from a source.*
 *   **Hypertable Partitioning Column:** `occurred_at`
-*   **Indexes:** Appropriate indexes are defined on `occurred_at`, (`source`, `source_id`), and other frequently queried columns as per Alembic migrations.
+*   **Indexes:** 
+    * Appropriate indexes are defined on `occurred_at`, (`source`, `source_id`), and other frequently queried columns as per Alembic migrations.
+    * Specialized index `ix_raw_events_processed_occurred_at` on (`processed`, `occurred_at`) with `WHERE processed = FALSE` for efficiently fetching unprocessed events for sentiment analysis.
 
 ### 3.2. `RawEventORM` (SQLAlchemy Model)
 

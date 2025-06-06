@@ -47,10 +47,10 @@ This document outlines the step-by-step tasks required to implement the Sentimen
 
 ## Phase 3: Core Components Implementation (in `sentiment_analyzer/core/`)
 
-- `[ ]` **3.1: Data Fetcher (`data_fetcher.py`):**
-  - `[ ]` Implement logic to connect to TimescaleDB.
-  - `[ ]` Implement function to fetch a batch of unprocessed events from `raw_events` (check for a `processed_sentiment` flag or similar).
-  - `[ ]` Implement logic to claim events (e.g., set `processed_sentiment = TRUE`).
+- `[x]` **3.1: Data Fetcher (`data_fetcher.py`):**
+  - `[x]` Implement logic to connect to TimescaleDB.
+  - `[x]` Implement function to fetch a batch of unprocessed events from `raw_events` (check for a `processed` flag).
+  - `[x]` Implement logic to claim events (e.g., set `processed = TRUE`, `processed_at = NOW()`).
 - `[ ]` **3.2: Preprocessor (`preprocessor.py`):**
   - `[ ]` Implement text cleaning using `spaCy` (`en_core_web_lg`):
     - `[ ]` Lowercasing, URL removal, emoji removal/conversion.

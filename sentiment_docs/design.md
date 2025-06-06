@@ -123,7 +123,7 @@ graph TD
    - Every X seconds (configurable, default 30 s), the Data Fetcher runs:
      ```sql
      UPDATE raw_events
-     SET processed = TRUE
+     SET processed = TRUE, processed_at = NOW()
      WHERE processed = FALSE
      ORDER BY occurred_at ASC
      LIMIT :batch_size
@@ -206,18 +206,20 @@ graph TD
 
 This service expects each row in `raw_events` to match `RawEventDTO` / `RawEventORM` (see `models/raw_event.py`). Relevant fields:
 
-| Column      | Type           | Notes                                               |
-|-------------|----------------|-----------------------------------------------------|
-| `id`        | TEXT / UUID    | Unique identifier (NOT NULL)                         |
-| `occurred_at`   | TIMESTAMPTZ   | When the event happened (NOT NULL)                  |
-| `source`    | TEXT           | e.g. `"reddit"` (NOT NULL)                           |
-| `source_id` | TEXT           | e.g. `"r/wallstreetbets"` (NOT NULL, or `'unknown'`) |
-| `event_type`| TEXT           | e.g. `"post_created"`, `"comment_created"`           |
-| `payload`   | JSONB          | Contains fields like `title`, `selftext`, `author`   |
-| `processed` | BOOLEAN        | Default `FALSE`; toggled to `TRUE` when claimed      |
+| Column         | Type           | Notes                                               |
+|---------------|----------------|-----------------------------------------------------|
+| `id`          | TEXT / UUID    | Unique identifier (NOT NULL)                         |
+| `occurred_at` | TIMESTAMPTZ   | When the event happened (NOT NULL)                  |
+| `source`      | TEXT           | e.g. `"reddit"` (NOT NULL)                           |
+| `source_id`   | TEXT           | e.g. `"r/wallstreetbets"` (NOT NULL, or `'unknown'`) |
+| `event_type`  | TEXT           | e.g. `"post_created"`, `"comment_created"`           |
+| `payload`     | JSONB          | Contains fields like `title`, `selftext`, `author`   |
+| `processed`   | BOOLEAN        | Default `FALSE`; toggled to `TRUE` when claimed      |
+| `processed_at`| TIMESTAMPTZ    | When sentiment analysis was completed (NULL until processed) |
 
 #### Notes:
-- The service reads **only** from `raw_events`. It does **not** modify the original text or delete rows (beyond marking `processed = TRUE`).  
+- The service reads **only** from `raw_events`. It does **not** modify the original text or delete rows (beyond marking `processed = TRUE` and setting `processed_at` timestamp).
+- A specialized index `ix_raw_events_processed_occurred_at` on `(processed, occurred_at)` with `WHERE processed = FALSE` optimizes fetching unprocessed events.
 - Ensure that if `payload` changes (e.g. you add `payload.text_language`), you update `RawEventDTO` first, then this service’s code.  
 
 ---
