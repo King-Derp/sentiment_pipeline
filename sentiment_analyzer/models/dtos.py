@@ -29,8 +29,7 @@ class RawEventDTO(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class SentimentResultDTO(BaseModel):
@@ -51,8 +50,7 @@ class SentimentResultDTO(BaseModel):
     model_version: str
     raw_text: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class SentimentMetricDTO(BaseModel):
@@ -68,8 +66,7 @@ class SentimentMetricDTO(BaseModel):
     count: int
     avg_score: float
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class AnalyzeTextRequestItem(BaseModel):
@@ -89,6 +86,31 @@ class AnalyzeTextRequest(AnalyzeTextRequestItem):
     Inherits fields from AnalyzeTextRequestItem.
     """
     pass
+
+
+class PreprocessedText(BaseModel):
+    """
+    DTO for the output of the text preprocessing step.
+    """
+    original_text: str
+    cleaned_text: str
+    detected_language_code: str  # e.g., 'en', 'es'
+    detected_language_confidence: Optional[float] = None
+    is_target_language: bool
+
+    model_config = {"from_attributes": True}
+
+
+class SentimentAnalysisOutput(BaseModel):
+    """
+    DTO for the output of the sentiment analysis step.
+    """
+    label: str  # e.g., 'positive', 'negative', 'neutral'
+    confidence: float  # Probability of the predicted label
+    scores: Dict[str, float]  # Probabilities for all labels, e.g., {"positive": 0.7, "negative": 0.1, "neutral": 0.2}
+    model_version: str
+
+    model_config = {"from_attributes": True}
 
 
 class AnalyzeTextsBulkRequest(BaseModel):

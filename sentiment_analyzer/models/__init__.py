@@ -15,6 +15,8 @@ from .dtos import (
     AnalyzeTextRequestItem,
     AnalyzeTextRequest,
     AnalyzeTextsBulkRequest,
+    PreprocessedText, # Added for preprocessor output
+    SentimentAnalysisOutput, # Added for sentiment analyzer output
 )
 from .dead_letter_event_orm import DeadLetterEventORM
 
@@ -27,5 +29,7 @@ __all__ = [
     "AnalyzeTextRequestItem",
     "AnalyzeTextRequest",
     "AnalyzeTextsBulkRequest",
+    "PreprocessedText",
+    "SentimentAnalysisOutput",
     "DeadLetterEventORM",
 ]

@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Logging configuration path (can be overridden by env var)
     LOGGING_CONFIG_PATH: str = str(SERVICE_ROOT_DIR / "config" / "logging_config.yaml")
 
+    # Preprocessor settings
+    PREPROCESSOR_TARGET_LANGUAGE: str = "en"
+
+    # Pipeline settings
+    PIPELINE_RUN_INTERVAL_SECONDS: int = 60
+
     model_config = SettingsConfigDict(
         env_file= str(SERVICE_ROOT_DIR / ".env"), # Ensure .env path is a string
         env_file_encoding='utf-8',

@@ -1,7 +1,7 @@
 # Sentiment Analysis Service Design
 
-**Version:** 1.1  
-**Last Updated:** 2025-06-03  
+**Version:** 1.2  
+**Last Updated:** 2025-06-09  
 **Status:** Draft
 
 > **Note:** This service consumes raw events from the `raw_events` hypertable, each conforming to the `RawEventDTO` / `RawEventORM` contract (see `models/raw_event.py`). Any changes to that contract must be mirrored here.
@@ -58,11 +58,11 @@ The **Sentiment Analysis Service** reads raw text events from the `raw_events` h
 
 ### 2.1 High-Level Design
 
-We follow a modular, event-driven pipeline:
+The system follows a modular, event-driven pipeline, orchestrated by the `SentimentPipeline` component. The key processing stages are:
 
 1. **Data Fetcher**  
-   - Claims unprocessed rows from `raw_events`  
-   - Marks them “in processing” to prevent duplication  
+   - Claims unprocessed rows from `raw_events` based on their `processing_status` (e.g., 'unprocessed').
+   - Atomically updates status to 'claimed' to prevent multiple workers processing the same event.  
 
 2. **Preprocessor**  
    - Cleans text (removes URLs, special characters, emojis)  
@@ -120,78 +120,101 @@ graph TD
 ### 2.3 Data Flow
 
 1. **Claim New Events**  
-   - Every X seconds (configurable, default 30 s), the Data Fetcher runs:
+   - Every X seconds (configurable, default `PIPELINE_RUN_INTERVAL_SECONDS`), the `SentimentPipeline` triggers the `DataFetcher` component, which runs:
      ```sql
      UPDATE raw_events
-     SET processed = TRUE, processed_at = NOW()
-     WHERE processed = FALSE
+     SET processing_status = 'claimed', claimed_at = NOW()
+     WHERE processing_status = 'unprocessed'
      ORDER BY occurred_at ASC
      LIMIT :batch_size
      RETURNING *;
      ```
-   - This `UPDATE … RETURNING` is in a single transaction, guaranteeing no two fetchers pick the same rows.  
+   - This `UPDATE … RETURNING` is in a single transaction, guaranteeing no two fetchers pick the same rows. The `processing_status` field is an enum (e.g., `unprocessed`, `claimed`, `processed`, `failed`).  
 
 2. **Preprocessing**  
    - For each fetched event:  
-     - Extract `payload.text` (or `payload.title + payload.selftext`) as raw text  
-     - Remove URLs (`https?://\S+`), strip Markdown/reddit formatting, remove emojis (using `emoji` pkg), lower‐case, optionally lemmatize (via spaCy/NLTK)  
-     - (Optional) Detect language with `langdetect` or `fasttext`; skip non‐English if `config.processing.language = "en"`.  
+     - Extract `content` from the `RawEventDTO` as raw text.  
+     - **Text Cleaning Pipeline (using spaCy `en_core_web_lg` and other libraries):**
+       - Remove URLs, email addresses, mentions (e.g., @user), and hashtags.
+       - Convert emojis to their textual descriptions (e.g., using the `emoji` library).
+       - Normalize text: lowercasing, remove extra whitespace.
+       - Perform lemmatization.
+       - Remove stop-words.
+     - **Language Detection:** Detect language using `langdetect`. If the detected language is not the `PREPROCESSOR_TARGET_LANGUAGE` (e.g., "en"), the event may be skipped or handled differently. The output includes `cleaned_text`, `detected_language_code`, and `is_target_language`.  
 
 3. **Sentiment Analysis**  
    - Pass cleaned text to chosen model:  
      - **VADER** (rule‐based) or  
      - **FinBERT** (`yiyanghkust/finbert‐tone`) or  
      - **Custom BERT** (fine‐tuned on in‐house data)  
-   - Produce `(sentiment_score, sentiment_label, confidence, model_version)`.  
-   - Example (FinBERT): returns `[0.10, 0.05, 0.85]` for `[negative, neutral, positive]`, so label = `positive`, confidence = 0.85.  
+   - Produce a `SentimentAnalysisOutput` DTO containing:
+       - `label` (str): The predicted sentiment label (e.g., "positive", "neutral", "negative").
+       - `confidence` (float): The confidence score for the predicted `label`.
+       - `scores` (dict): A dictionary of scores for all sentiment classes (e.g., `{"positive": 0.85, "neutral": 0.05, "negative": 0.10}`).
+       - `model_version` (str): Identifier for the sentiment model used.
+   - Example (FinBERT): `label` = "positive", `confidence` = 0.85, `scores` = `{"positive": 0.85, "neutral": 0.05, "negative": 0.10}`.  
 
 4. **Result Storage**  
+   The `ResultProcessor` component handles saving data to `sentiment_results` and updating `sentiment_metrics`.
+
    - **Insert into `sentiment_results`:**  
+     For each successfully analyzed event, a new record is inserted. Details from `RawEventDTO`, `PreprocessedText`, and `SentimentAnalysisOutput` are mapped to `SentimentResultORM` fields.
      ```sql
+     -- Conceptual SQL, actual implementation uses SQLAlchemy ORM
      INSERT INTO sentiment_results (
-       event_id,
-       occurred_at,
-       source,
-       source_id,
-       sentiment_score,
-       sentiment_label,
-       confidence,
-       model_version,
-       raw_text
+       id, raw_event_id, processed_at, model_version, 
+       sentiment_label, sentiment_confidence, sentiment_scores_json, 
+       cleaned_text, detected_language_code, is_target_language
      ) VALUES (
-       :event_id,
-       :occurred_at,
-       :source,
-       :source_id,
-       :sentiment_score,
-       :sentiment_label,
-       :confidence,
-       :model_version,
-       :raw_text
+       gen_random_uuid(), :raw_event_id, NOW(), :model_version, 
+       :label, :confidence, :scores_json, 
+       :cleaned_text, :lang_code, :is_target_lang
      );
-     ```  
+     ```
+
    - **Real‐Time Metrics Update in `sentiment_metrics`:**  
+     Metrics are updated using an `INSERT ... ON CONFLICT DO UPDATE` strategy. For each processed event, relevant metrics (like event count and sum of scores for the determined label) are incremented.
+
+     Example for incrementing `event_count` for a given label:
      ```sql
+     -- Conceptual SQL, actual implementation uses SQLAlchemy ORM
      INSERT INTO sentiment_metrics (
-       time_bucket, source, source_id, label, count, avg_score
+       id, metric_timestamp, raw_event_source, sentiment_label, 
+       model_version, metric_name, metric_value
      )
      VALUES (
-       time_bucket('1h', :occurred_at),
-       :source,
-       :source_id,
-       :sentiment_label,
-       1,
-       :sentiment_score
+       gen_random_uuid(), time_bucket_gapfill('1 hour', :processed_at), -- or similar time bucketing
+       :raw_event_source, 
+       :sentiment_label, 
+       :model_version, 
+       'event_count', 
+       1 -- Increment by 1
      )
-     ON CONFLICT (time_bucket, source, source_id, label)
+     ON CONFLICT (metric_timestamp, raw_event_source, sentiment_label, model_version, metric_name)
      DO UPDATE SET
-       count = sentiment_metrics.count + 1,
-       avg_score = (
-         (sentiment_metrics.avg_score * sentiment_metrics.count)
-         + EXCLUDED.avg_score
-       ) / (sentiment_metrics.count + 1);
+       metric_value = sentiment_metrics.metric_value + EXCLUDED.metric_value;
      ```
-   - Because this is done event‐by‐event, `sentiment_metrics` always reflects the latest counts and averages.
+
+     Example for incrementing sum of confidence scores for a given label (if tracking average confidence):
+     ```sql
+     -- Conceptual SQL, actual implementation uses SQLAlchemy ORM
+     INSERT INTO sentiment_metrics (
+       id, metric_timestamp, raw_event_source, sentiment_label, 
+       model_version, metric_name, metric_value
+     )
+     VALUES (
+       gen_random_uuid(), time_bucket_gapfill('1 hour', :processed_at), 
+       :raw_event_source, 
+       :sentiment_label, 
+       :model_version, 
+       'confidence_sum', 
+       :sentiment_confidence -- Add current event's confidence
+     )
+     ON CONFLICT (metric_timestamp, raw_event_source, sentiment_label, model_version, metric_name)
+     DO UPDATE SET
+       metric_value = sentiment_metrics.metric_value + EXCLUDED.metric_value;
+     ```
+   - This approach allows for various metrics to be tracked. Average scores or confidences can be calculated at query time by dividing the sum-metric by the 'event_count' for the same aggregation group.
 
 5. **API Exposure**  
    - Clients call `/api/v1/sentiment/analyze?text=…` for on‐the‐fly analysis.  
@@ -228,64 +251,39 @@ This service expects each row in `raw_events` to match `RawEventDTO` / `RawEvent
 
 #### 3.2.1 `sentiment_results` Table
 
-```sql
-CREATE TABLE sentiment_results (
-  id              BIGSERIAL, -- Changed from SERIAL to align with BigInteger in ORM
-  event_id        BIGINT            NOT NULL, -- Changed from TEXT to BIGINT
-  occurred_at     TIMESTAMPTZ       NOT NULL,
-  source          TEXT              NOT NULL,
-  source_id       TEXT              NOT NULL,
-  sentiment_score FLOAT             NOT NULL,
-  sentiment_label TEXT              NOT NULL,
-  confidence      FLOAT,
-  processed_at    TIMESTAMPTZ   DEFAULT NOW() NOT NULL,
-  model_version   TEXT              NOT NULL,
-  raw_text        TEXT,
-  PRIMARY KEY (id, processed_at) -- Composite PK for hypertable
-);
-
--- Note: event_id and occurred_at logically reference raw_events(id, occurred_at).
--- A database foreign key constraint is NOT enforced due to TimescaleDB limitations
--- on foreign keys between two hypertables. Referential integrity is managed
--- at the application level.
-
--- Convert to a hypertable on the time dimension (processed_at)
-SELECT create_hypertable('sentiment_results', 'processed_at');
-
--- Indexes for common query patterns
-CREATE INDEX idx_sentiment_src_time
-  ON sentiment_results (source, occurred_at);
-
-CREATE INDEX idx_sentiment_label_time
-  ON sentiment_results (sentiment_label, occurred_at);
-
--- Optional: unique constraint on (event_id, occurred_at)
--- if you want to prevent double‐inserts
-ALTER TABLE sentiment_results
-  ADD CONSTRAINT uq_event_occurred UNIQUE (event_id, occurred_at);
-```
-
-- **Composite Unique Constraint** `(event_id, occurred_at)` is recommended if you want to guarantee idempotency: if the same event is processed twice, the second insert will fail.  
-- `source_id` marked `NOT NULL` here; if some events truly have no specific `source_id`, set them to the literal `'unknown'` so you never insert `NULL`. This simplifies indexing and uniqueness.
+- **Purpose**: Stores individual sentiment analysis results for each processed event, linking back to the original raw event.
+- **Hypertable**: Yes, partitioned by `processed_at`.
+- **ORM Model**: `SentimentResultORM`
+- **Key Columns**:
+  - `id` (UUID, Primary Key)
+- **Core Data Columns**:
+  - `raw_event_id` (UUID, Foreign Key to `raw_events.id`, Indexed) - Links to the original event.
+  - `processed_at` (TIMESTAMPTZ, default NOW(), Indexed) - Timestamp of when the sentiment analysis was completed.
+  - `model_version` (TEXT) - Version of the sentiment model used.
+  - `sentiment_label` (TEXT) - The final determined sentiment (e.g., 'positive', 'negative', 'neutral').
+  - `sentiment_confidence` (FLOAT) - Confidence score for the `sentiment_label`.
+  - `sentiment_scores_json` (JSONB) - JSON object storing all class scores from the model (e.g., `{"positive": 0.8, "neutral": 0.15, "negative": 0.05}`).
+  - `cleaned_text` (TEXT) - The preprocessed text that was analyzed.
+  - `detected_language_code` (TEXT, nullable) - Detected language code (e.g., 'en', 'es').
+  - `is_target_language` (BOOLEAN) - Flag indicating if the detected language was the target language for analysis.
 
 #### 3.2.2 `sentiment_metrics` Table
 
-```sql
-CREATE TABLE sentiment_metrics (
-  time_bucket  TIMESTAMPTZ NOT NULL,
-  source       TEXT        NOT NULL,
-  source_id    TEXT        NOT NULL,  -- use 'unknown' if no specific ID
-  label        TEXT        NOT NULL,  -- e.g. 'positive', 'negative', 'very_positive', etc.
-  count        INTEGER     NOT NULL,
-  avg_score    FLOAT       NOT NULL,
-  PRIMARY KEY (time_bucket, source, source_id, label)
-);
-
--- Convert to a hypertable on the time dimension
-SELECT create_hypertable('sentiment_metrics', 'time_bucket');
-```
-
-- **Composite Primary Key** `(time_bucket, source, source_id, label)` ensures that each unique combination is stored exactly once per bucket.  
+- **Purpose**: Stores aggregated sentiment metrics (like counts, sums of scores) over time buckets, per source, label, and model.
+- **Hypertable**: Yes, partitioned by `metric_timestamp`.
+- **ORM Model**: `SentimentMetricORM`
+- **Key Columns** (Part of composite unique constraint; `id` is the Primary Key):
+  - `id` (UUID, Primary Key)
+  - `metric_timestamp` (TIMESTAMPTZ) - The start of the time bucket (e.g., top of the hour).
+  - `raw_event_source` (TEXT) - Source of the original raw events (e.g., 'reddit', 'twitter').
+  - `sentiment_label` (TEXT) - The sentiment label being aggregated.
+  - `model_version` (TEXT) - Version of the sentiment model used for the results being aggregated.
+  - `metric_name` (TEXT) - Name of the specific metric being stored (e.g., 'event_count', 'confidence_sum').
+- **Metric Value Column**:
+  - `metric_value` (FLOAT) - The value of the specified `metric_name` for this aggregation group.
+- **Notes**:
+  - The combination of `(metric_timestamp, raw_event_source, sentiment_label, model_version, metric_name)` should be unique to ensure each specific metric for an aggregation group is stored once per time bucket.
+  - This structure allows for flexible aggregation. For example, to get the total count of positive sentiments for 'reddit' in an hour, you'd query for `metric_name = 'event_count'` and `sentiment_label = 'positive'`. Average scores or confidences would be calculated at query time by dividing a sum-metric (e.g., 'confidence_sum') by an 'event_count' metric for the same aggregation group (timestamp, source, label, model_version).
 - **Granularity of Buckets:**  
   - By default, at write‐time we use `time_bucket('1h', occurred_at)`.  
   - If you later want daily aggregates, you can run a backfill query like:
@@ -316,34 +314,22 @@ SELECT create_hypertable('sentiment_metrics', 'time_bucket');
 
 #### 3.2.3 `dead_letter_events` Table
 
-This table stores events that could not be processed by the sentiment analysis pipeline, along with error details. This aids in debugging and potential reprocessing.
-
-```sql
-CREATE TABLE dead_letter_events (
-  id                    SERIAL       PRIMARY KEY,
-  event_id              TEXT         NOT NULL,
-  occurred_at           TIMESTAMPTZ  NOT NULL,
-  source                TEXT         NOT NULL,
-  source_id             TEXT         NOT NULL,
-  event_payload         JSONB,
-  processing_component  TEXT,
-  error_msg             TEXT,
-  failed_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-
--- Convert to a hypertable on the time dimension
-SELECT create_hypertable('dead_letter_events', 'failed_at');
-
--- Indexes
-CREATE INDEX idx_dle_event_id_occurred_at ON dead_letter_events (event_id, occurred_at);
-CREATE INDEX idx_dle_failed_at ON dead_letter_events (failed_at DESC);
-```
-
-- **`event_payload` (`JSONB`):** Stores the original raw event data that caused the failure.
-- **`processing_component` (`TEXT`):** Identifies the specific part of the sentiment service where the error occurred (e.g., "preprocessor", "analyzer_finbert").
-- **`failed_at` (`TIMESTAMPTZ`):** Timestamp of when the processing failure was recorded. This is used as the time dimension for the hypertable.
-- **Indexes:** Created for common query patterns, such as looking up by original event identifiers or by failure time.
-- **Hypertable:** Facilitates efficient data management and querying, especially if the volume of dead-lettered events becomes significant.
+- **Purpose**: Stores raw events that failed processing in the sentiment analysis pipeline after all attempts or due to critical errors, allowing for later inspection and potential reprocessing.
+- **Hypertable**: Yes, partitioned by `failed_at`.
+- **ORM Model**: `DeadLetterEventORM`
+- **Key Columns**:
+  - `id` (UUID, Primary Key)
+- **Core Data Columns**:
+  - `raw_event_id` (UUID, nullable) - Foreign key to `raw_events.id` if the failure occurred after the raw event was identified. This can be NULL if the event data itself was malformed before an ID could be parsed.
+  - `raw_event_content` (JSONB, nullable) - The content of the raw event, if available, stored as JSON. This could be the original `RawEventDTO` or parts of it.
+  - `failed_at` (TIMESTAMPTZ, default NOW(), Indexed) - Timestamp of when the event processing failed and was moved to this table. This is the hypertable partitioning key.
+  - `error_message` (TEXT, nullable) - Description of the error that caused the failure.
+  - `failed_stage` (TEXT, nullable) - The stage in the pipeline where the failure occurred (e.g., 'preprocessing', 'sentiment_analysis', 'result_saving', 'data_fetching').
+  - `traceback` (TEXT, nullable) - Full Python traceback of the exception, if available and captured.
+  - `retry_count` (INTEGER, default 0) - Number of times processing has been attempted for this event (can be incremented by a future retry mechanism).
+- **Notes**:
+  - This table provides a comprehensive log for events that could not be processed, aiding in debugging pipeline issues and understanding data quality problems.
+  - The `raw_event_content` allows for full inspection of the problematic data.
 
 
 ### 3.3 TimescaleDB Specific Considerations
@@ -367,7 +353,19 @@ This limitation means that while the ORM models and migration scripts will defin
 
 ## 4. Components
 
-### 4.1 Data Fetcher
+### 4.1 `SentimentPipeline` (Orchestrator)
+
+- **Purpose**: Coordinates the end-to-end sentiment analysis workflow for batches of events.
+- **Key Responsibilities**:
+  - Manages the main processing loop, running at a configurable interval (`PIPELINE_RUN_INTERVAL_SECONDS`).
+  - Invokes the `DataFetcher` to retrieve a batch of raw events.
+  - For each event, orchestrates the sequence: `Preprocessor` -> `SentimentAnalyzerComponent` -> `ResultProcessor`.
+  - Uses `asyncio.gather` for concurrent processing of events within a batch.
+  - Implements top-level error handling for individual event processing, including routing failed events to the `dead_letter_events` table via the `ResultProcessor`.
+  - Logs overall batch processing statistics (e.g., number of events fetched, processed successfully, failed).
+- **Implementation**: `sentiment_analyzer.core.pipeline.SentimentPipeline`
+
+### 4.2 Data Fetcher
 
 **Responsibility:** Claim unprocessed rows from `raw_events`, mark them as claimed (`processed = TRUE`), and hand them to the preprocessing pipeline.
 
@@ -404,7 +402,7 @@ This limitation means that while the ORM models and migration scripts will defin
 
 ---
 
-### 4.2 Preprocessor
+### 4.3 Preprocessor
 
 **Responsibility:** Clean and normalize raw text, remove noise, optionally detect/filter by language.
 
@@ -475,7 +473,7 @@ This limitation means that while the ORM models and migration scripts will defin
 
 ---
 
-### 4.3 Sentiment Analyzer
+### 4.4 Sentiment Analyzer
 
 **Responsibility:** Take preprocessed text and return sentiment score, label, confidence, and model version.
 
@@ -513,7 +511,7 @@ This limitation means that while the ORM models and migration scripts will defin
 
 ---
 
-### 4.4 Result Processor
+### 4.5 Result Processor
 
 **Responsibility:**  
 - Insert each sentiment result into `sentiment_results`.  
@@ -579,7 +577,7 @@ This limitation means that while the ORM models and migration scripts will defin
 
 ---
 
-### 4.5 API Service
+### 4.6 API Service
 
 **Responsibility:** Expose RESTful HTTP endpoints for clients to:
 
