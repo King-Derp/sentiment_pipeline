@@ -4,16 +4,29 @@ Sentiment Analyzer component for the Sentiment Analysis Service.
 This component uses a pre-trained Hugging Face Transformers model (e.g., FinBERT)
 to perform sentiment analysis on preprocessed text.
 """
+import importlib
 import logging
-from typing import Dict
-
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, PreTrainedModel, PreTrainedTokenizerBase
+from typing import Any, Dict
 
 from sentiment_analyzer.config.settings import settings
 from sentiment_analyzer.models.dtos import SentimentAnalysisOutput
 
 logger = logging.getLogger(__name__)
+
+# NOTE: Heavy libraries like torch and transformers significantly slow down test collection
+# and may not be available in minimal CI environments. To keep import time fast and avoid
+# optional dependency issues, we **lazy-import** them inside the component's constructor.
+#
+# We still expose the names at module level so that unit tests can patch them *before* the
+# class is instantiated (e.g., with pytest's patch fixture). They are initialised to `None`
+# and populated on first real (non-mocked) construction.
+
+torch: Any = None  # Will be set during runtime lazy import
+AutoTokenizer: Any = None  # idem
+AutoModelForSequenceClassification: Any = None  # idem
+PreTrainedModel: Any = None  # typing alias resolved dynamically
+PreTrainedTokenizerBase: Any = None
+
 
 class SentimentAnalyzerComponent:
     """
@@ -32,27 +45,62 @@ class SentimentAnalyzerComponent:
             model_name (str): The name or path of the Hugging Face model to load.
             use_gpu_if_available (bool): Whether to use GPU if available.
         """
+        global torch, AutoTokenizer, AutoModelForSequenceClassification, PreTrainedModel, PreTrainedTokenizerBase
+
+        try:
+            if torch is None:
+                torch = importlib.import_module("torch")
+
+            # Only import transformers if mocks weren't injected by tests.
+            if AutoTokenizer is None or AutoModelForSequenceClassification is None:
+                transformers = importlib.import_module("transformers")
+
+                # Only overwrite globals that are still None, preserving any externally patched mocks.
+                if AutoTokenizer is None:
+                    AutoTokenizer = transformers.AutoTokenizer  # type: ignore[assignment]
+                if AutoModelForSequenceClassification is None:
+                    AutoModelForSequenceClassification = (
+                        transformers.AutoModelForSequenceClassification  # type: ignore[assignment]
+                    )
+
+                # These are only used for type hints; safe to overwrite if missing.
+                global PreTrainedModel, PreTrainedTokenizerBase
+                PreTrainedModel = transformers.PreTrainedModel  # type: ignore[assignment]
+                PreTrainedTokenizerBase = transformers.PreTrainedTokenizerBase  # type: ignore[assignment]
+        except ModuleNotFoundError as e:
+            # Provide a clear error to the developer – tests should patch these names.
+            logger.critical(
+                "Required libraries 'torch' and 'transformers' are not installed. "
+                "Either install them or patch 'AutoTokenizer' & 'AutoModelForSequenceClassification' "
+                "for unit testing.",
+                exc_info=True,
+            )
+            raise
+
         self.model_name = model_name
         self.device = self._get_device(use_gpu_if_available)
-        
-        logger.info(f"Initializing SentimentAnalyzerComponent with model: {self.model_name} on device: {self.device}")
+
+        logger.info(
+            "Initializing SentimentAnalyzerComponent with model: %s on device: %s", self.model_name, self.device
+        )
 
         try:
             self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(self.model_name)
             self.model: PreTrainedModel = AutoModelForSequenceClassification.from_pretrained(self.model_name)
             self.model.to(self.device)
             self.model.eval()  # Set model to evaluation mode
-            logger.info(f"Successfully loaded model '{self.model_name}' and tokenizer.")
+            logger.info("Successfully loaded model '%s' and tokenizer.", self.model_name)
         except Exception as e:
-            logger.error(f"Error loading model or tokenizer '{self.model_name}': {e}", exc_info=True)
-            # Depending on application requirements, either raise to halt or handle gracefully.
+            logger.error(
+                "Error loading model or tokenizer '%s': %s", self.model_name, e, exc_info=True
+            )
             raise
 
-    def _get_device(self, use_gpu_if_available: bool) -> torch.device:
+    def _get_device(self, use_gpu_if_available: bool):
         """
         Determines the device (CPU or GPU) to use for PyTorch operations.
         """
-        if use_gpu_if_available and torch.cuda.is_available():
+        if use_gpu_if_available and getattr(torch, "cuda", None) and torch.cuda.is_available():
             logger.info("CUDA is available. Using GPU for sentiment analysis.")
             return torch.device("cuda")
         elif use_gpu_if_available:
@@ -100,7 +148,9 @@ class SentimentAnalyzerComponent:
             predicted_label = id2label[predicted_class_id]
             confidence = probabilities[0, predicted_class_id].item()
             
-            all_scores: Dict[str, float] = {id2label[i]: probabilities[0, i].item() for i in range(probabilities.shape[1])}
+            all_scores: Dict[str, float] = {
+                id2label[i]: probabilities[0, i].item() for i in range(probabilities.shape[1])
+            }
 
             return SentimentAnalysisOutput(
                 label=predicted_label,
@@ -115,7 +165,7 @@ class SentimentAnalyzerComponent:
             # For now, return a default neutral sentiment on error
             return SentimentAnalysisOutput(
                 label="neutral", 
-                confidence=0.0, # Indicate low confidence due to error
+                confidence=0.0,  # Indicate low confidence due to error
                 scores={"positive": 0.0, "negative": 0.0, "neutral": 0.0},
                 model_version=self.model_name
             )

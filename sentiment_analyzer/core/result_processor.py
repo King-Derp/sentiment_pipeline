@@ -9,7 +9,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict
 
-from sqlalchemy import select, update # SQLAlchemy 2.0 stylerom sqlalchemy.dialects.postgresql import insert as pg_insert # For ON CONFLICT DO UPDATE
+from sqlalchemy import select, update # SQLAlchemy 2.0 style
+from sqlalchemy.dialects.postgresql import insert as pg_insert # For ON CONFLICT DO UPDATE
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,12 +19,12 @@ from sentiment_analyzer.models.dtos import (
     PreprocessedText,
     SentimentAnalysisOutput,
 )
-from sentiment_analyzer.models.orm import (
+from sentiment_analyzer.models import (
     SentimentResultORM,
     SentimentMetricORM,
     DeadLetterEventORM,
 )
-from sentiment_analyzer.utils.db_session import get_async_db_session
+from sentiment_analyzer.utils.db_session import get_db_session_context_manager as get_async_db_session
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +32,21 @@ class ResultProcessor:
     """
     Handles saving sentiment analysis results, updating metrics, and managing dead-letter events.
     """
+    def __init__(self, session: Optional[AsyncSession] = None):
+        """
+        Initializes the ResultProcessor.
+
+        Args:
+            session: An optional SQLAlchemy AsyncSession to use for database operations.
+                     If None, a new session will be created for each operation.
+        """
+        self._shared_session = session
 
     async def save_sentiment_result(
         self,
         raw_event: RawEventDTO,
         preprocessed_data: PreprocessedText,
-        sentiment_output: SentimentAnalysisOutput,
-        db_session: Optional[AsyncSession] = None,
+        sentiment_output: SentimentAnalysisOutput
     ) -> Optional[SentimentResultORM]:
         """
         Saves a single sentiment analysis result to the database.
@@ -51,21 +60,22 @@ class ResultProcessor:
         Returns:
             The saved SentimentResultORM object if successful, else None.
         """
-        session_manager = get_async_db_session(existing_session=db_session)
+        session_manager = get_async_db_session(existing_session=self._shared_session)
         async with session_manager as session:
             try:
                 new_result_orm = SentimentResultORM(
-                    raw_event_id=raw_event.id,
-                    cleaned_text=preprocessed_data.cleaned_text,
-                    detected_language_code=preprocessed_data.detected_language_code,
+                    # Use internal numeric id for DB column (BIGINT)
+                    event_id=raw_event.id,  # Always use internal numeric id for DB column (BIGINT)
+                    occurred_at=raw_event.occurred_at if raw_event.occurred_at else datetime.now(timezone.utc),
+                    source=raw_event.source if raw_event.source else "unknown",
+                    source_id=raw_event.source_id if raw_event.source_id else "unknown",
                     sentiment_label=sentiment_output.label,
-                    # Assuming sentiment_output.confidence is the primary score for the label
-                    sentiment_score=sentiment_output.confidence, 
+                    sentiment_score=sentiment_output.confidence, # Assuming this is the primary score for the label
+                    confidence=sentiment_output.confidence, # Added mapping for the explicit confidence field
                     sentiment_scores_json=sentiment_output.scores,
                     model_version=sentiment_output.model_version,
-                    # Ensure raw_text is stored if available and needed by schema/design
-                    # raw_text=preprocessed_data.original_text, # Example if needed
-                    processed_at=datetime.now(timezone.utc),
+                    raw_text=preprocessed_data.original_text, # Added, using original_text for raw_text field
+                    processed_at=datetime.now(timezone.utc)
                 )
                 session.add(new_result_orm)
                 await session.commit()
@@ -91,7 +101,6 @@ class ResultProcessor:
         self,
         sentiment_result: SentimentResultORM,
         raw_event_source: str, # Source from the original RawEventDTO
-        db_session: Optional[AsyncSession] = None,
     ) -> bool:
         """
         Updates aggregated sentiment metrics based on a new sentiment result.
@@ -105,65 +114,47 @@ class ResultProcessor:
         Returns:
             True if metrics were updated successfully, False otherwise.
         """
-        session_manager = get_async_db_session(existing_session=db_session)
+        session_manager = get_async_db_session(existing_session=self._shared_session)
         async with session_manager as session:
             try:
-                # Truncate timestamp to the hour for hourly aggregation
-                metric_ts = sentiment_result.processed_at.replace(
-                    minute=0, second=0, microsecond=0
+                metric_ts = sentiment_result.processed_at.replace(minute=0, second=0, microsecond=0)
+                source_id_value = getattr(sentiment_result, "source_id", "unknown")
+
+                existing_stmt = select(SentimentMetricORM).where(
+                    (SentimentMetricORM.time_bucket == metric_ts) &
+                    (SentimentMetricORM.source == raw_event_source) &
+                    (SentimentMetricORM.source_id == source_id_value) &
+                    (SentimentMetricORM.label == sentiment_result.sentiment_label)
                 )
 
-                common_key_fields = {
-                    "metric_timestamp": metric_ts,
-                    "raw_event_source": raw_event_source,
-                    "sentiment_label": sentiment_result.sentiment_label,
-                    "model_version": sentiment_result.model_version,
-                }
+                existing_metric_result = await session.execute(existing_stmt)
+                existing_metric = existing_metric_result.scalars().first()
 
-                # 1. Update/Insert count metric
-                count_metric_name = "count"
-                count_stmt = pg_insert(SentimentMetricORM).values(
-                    **common_key_fields,
-                    metric_name=count_metric_name,
-                    metric_value_int=1,
-                    metric_value_float=None # Ensure float is None if int is used
-                )
-                count_update_stmt = count_stmt.on_conflict_do_update(
-                    index_elements=[
-                        SentimentMetricORM.metric_timestamp,
-                        SentimentMetricORM.raw_event_source,
-                        SentimentMetricORM.sentiment_label,
-                        SentimentMetricORM.model_version,
-                        SentimentMetricORM.metric_name,
-                    ],
-                    set_=dict(
-                        metric_value_int=SentimentMetricORM.metric_value_int + 1
+                if existing_metric:
+                    new_count = existing_metric.count + 1
+                    new_avg = ((existing_metric.avg_score * existing_metric.count) + sentiment_result.sentiment_score) / new_count
+
+                    await session.execute(
+                        update(SentimentMetricORM)
+                        .where(
+                            (SentimentMetricORM.time_bucket == metric_ts) &
+                            (SentimentMetricORM.source == raw_event_source) &
+                            (SentimentMetricORM.source_id == source_id_value) &
+                            (SentimentMetricORM.label == sentiment_result.sentiment_label)
+                        )
+                        .values(count=new_count, avg_score=new_avg)
                     )
-                )
-                await session.execute(count_update_stmt)
-
-                # 2. Update/Insert score_sum metric
-                score_sum_metric_name = "score_sum"
-                score_sum_stmt = pg_insert(SentimentMetricORM).values(
-                    **common_key_fields,
-                    metric_name=score_sum_metric_name,
-                    metric_value_float=sentiment_result.sentiment_score,
-                    metric_value_int=None # Ensure int is None if float is used
-                )
-                score_sum_update_stmt = score_sum_stmt.on_conflict_do_update(
-                    index_elements=[
-                        SentimentMetricORM.metric_timestamp,
-                        SentimentMetricORM.raw_event_source,
-                        SentimentMetricORM.sentiment_label,
-                        SentimentMetricORM.model_version,
-                        SentimentMetricORM.metric_name,
-                    ],
-                    set_=dict(
-                        metric_value_float=SentimentMetricORM.metric_value_float + sentiment_result.sentiment_score
+                else:
+                    await session.execute(
+                        pg_insert(SentimentMetricORM).values(
+                            time_bucket=metric_ts,
+                            source=raw_event_source,
+                            source_id=source_id_value,
+                            label=sentiment_result.sentiment_label,
+                            count=1,
+                            avg_score=sentiment_result.sentiment_score,
+                        )
                     )
-                )
-                await session.execute(score_sum_update_stmt)
-                
                 await session.commit()
                 logger.info(f"Updated sentiment metrics for result_id: {sentiment_result.id}, source: {raw_event_source}")
                 return True
@@ -186,8 +177,7 @@ class ResultProcessor:
         self,
         raw_event: RawEventDTO,
         error_message: str,
-        failed_stage: str,
-        db_session: Optional[AsyncSession] = None,
+        failed_stage: str
     ) -> Optional[DeadLetterEventORM]:
         """
         Moves a failed event's details to the dead-letter queue.
@@ -201,17 +191,19 @@ class ResultProcessor:
         Returns:
             The saved DeadLetterEventORM object if successful, else None.
         """
-        session_manager = get_async_db_session(existing_session=db_session)
+        session_manager = get_async_db_session(existing_session=self._shared_session)
         async with session_manager as session:
             try:
-                # Ensure raw_event_content_json is serializable
-                content_json_str = raw_event.model_dump_json() if raw_event else "{}"
+                content_json: Dict = raw_event.model_dump(mode="json") if raw_event else {}
 
                 new_dle_orm = DeadLetterEventORM(
-                    raw_event_id=raw_event.id if raw_event else None, # Handle if raw_event could be None
-                    raw_event_content_json=content_json_str,
-                    failure_reason=error_message,
-                    failed_stage=failed_stage,
+                    event_id=raw_event.event_id if raw_event.event_id is not None else str(raw_event.id),
+                    occurred_at=raw_event.occurred_at if raw_event and raw_event.occurred_at else datetime.now(timezone.utc), # Added
+                    source=raw_event.source if raw_event and raw_event.source else "unknown", # Added
+                    source_id=raw_event.source_id if raw_event and raw_event.source_id else "unknown", # Added
+                    event_payload=content_json,
+                    error_msg=error_message,  # Corrected: failure_reason to error_msg
+                    processing_component=failed_stage,  # Corrected: failed_stage to processing_component
                     failed_at=datetime.now(timezone.utc),
                 )
                 session.add(new_dle_orm)

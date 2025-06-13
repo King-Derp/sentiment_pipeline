@@ -74,6 +74,11 @@
 
 ## Current / Next Tasks
 
+- **Debug and fix failing integration and unit tests** (Completed: 2025-06-13)
+  - Resolved `test_full_pipeline_run_integration` and related `test_data_fetcher` unit test failures by updating `DataFetcher.fetch_and_claim_raw_events` to dynamically use either `processed_at` or `sentiment_processed_at` (depending on the `RawEventORM` in use) for filtering unprocessed events, and by fixing logger calls.
+  - Resolved `test_update_sentiment_metrics_success` unit test failure by updating assertion for `execute.await_count` to `2`, reflecting the select-then-upsert logic in `ResultProcessor.update_sentiment_metrics`.
+  - Previous fixes also addressed `event_id` handling (internal vs. external) and DLQ payload serialization in `ResultProcessor` and its unit tests.
+
 - **Verify no writes to `raw_submissions` and update downstream consumers** (Added: YYYY-MM-DD) # Placeholder, to be addressed separately
   - Confirm no active code paths attempt to write to the (now dropped) `raw_submissions` table.
   - Identify and update any downstream processes or queries that previously read from `raw_submissions` to use `raw_events`.

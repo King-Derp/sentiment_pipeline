@@ -51,23 +51,23 @@ This document outlines the step-by-step tasks required to implement the Sentimen
   - `[x]` Implement logic to connect to TimescaleDB.
   - `[x]` Implement function to fetch a batch of unprocessed events from `raw_events` (check for a `processed` flag).
   - `[x]` Implement logic to claim events (e.g., set `processed = TRUE`, `processed_at = NOW()`).
-- `[ ]` **3.2: Preprocessor (`preprocessor.py`):**
-  - `[ ]` Implement text cleaning using `spaCy` (`en_core_web_lg`):
-    - `[ ]` Lowercasing, URL removal, emoji removal/conversion.
-    - `[ ]` Lemmatization, stop-word removal.
-  - `[ ]` Implement language detection (e.g., using `langdetect`). Initially, filter for English.
-- `[ ]` **3.3: Sentiment Analyzer (`sentiment_analyzer_component.py`):**
-  - `[ ]` Implement loading of the FinBERT model (from Hugging Face Transformers or local path).
-    - `[ ]` Ensure GPU support is correctly configured if available (PyTorch CUDA).
-  - `[ ]` Implement function to perform sentiment analysis on preprocessed text, returning score, label, confidence.
-  - `[ ]` Include model version in the output.
-- `[ ]` **3.4: Result Processor (`result_processor.py`):**
-  - `[ ]` Implement logic to save individual `SentimentResultDTO` objects to the `sentiment_results` table using `SentimentResultORM`.
-  - `[ ]` Implement logic to update/insert aggregated data into the `sentiment_metrics` table (using `SentimentMetricORM`) based on new results.
-- `[ ]` **3.5: Main Pipeline Orchestrator (`pipeline.py`):**
-  - `[ ]` Create a main loop/function that orchestrates the flow: Data Fetcher -> Preprocessor -> Sentiment Analyzer -> Result Processor.
-  - `[ ]` Implement batch processing logic.
-  - `[ ]` Integrate error handling and logging for each step.
+- `[x]` **3.2: Preprocessor (`preprocessor.py`):**
+  - `[x]` Implement text cleaning using `spaCy` (`en_core_web_lg`):
+    - `[x]` Lowercasing, URL removal, emoji removal/conversion.
+    - `[x]` Lemmatization, stop-word removal.
+  - `[x]` Implement language detection (e.g., using `langdetect`). Initially, filter for English.
+- `[x]` **3.3: Sentiment Analyzer (`sentiment_analyzer_component.py`):**
+  - `[x]` Implement loading of the FinBERT model (from Hugging Face Transformers or local path).
+    - `[x]` Ensure GPU support is correctly configured if available (PyTorch CUDA).
+  - `[x]` Implement function to perform sentiment analysis on preprocessed text, returning score, label, confidence.
+  - `[x]` Include model version in the output.
+- `[x]` **3.4: Result Processor (`result_processor.py`):**
+  - `[x]` Implement logic to save individual `SentimentResultDTO` objects to the `sentiment_results` table using `SentimentResultORM`.
+  - `[x]` Implement logic to update/insert aggregated data into the `sentiment_metrics` table (using `SentimentMetricORM`) based on new results.
+- `[x]` **3.5: Main Pipeline Orchestrator (`pipeline.py`):**
+  - `[x]` Create a main loop/function that orchestrates the flow: Data Fetcher -> Preprocessor -> Sentiment Analyzer -> Result Processor.
+  - `[x]` Implement batch processing logic.
+  - `[x]` Integrate error handling and logging for each step.
 
 ## Phase 4: API Development (in `sentiment_analyzer/api/`)
 

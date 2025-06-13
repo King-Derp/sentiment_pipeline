@@ -1,23 +1,29 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
+from functools import lru_cache
+from contextlib import asynccontextmanager
 
 from sentiment_analyzer.config.settings import settings
 
-# Create an asynchronous SQLAlchemy engine
-async_engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,  # Log SQL queries if DEBUG is True
-    pool_pre_ping=True,
-    pool_recycle=3600, # Optional: recycle connections periodically
-)
+@lru_cache
+def get_async_engine():
+    """Returns a cached instance of the async engine."""
+    return create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
 
-# Create an asynchronous session factory
-AsyncSessionFactory = async_sessionmaker(
-    bind=async_engine,
-    autoflush=False,
-    expire_on_commit=False,
-    class_=AsyncSession,
-)
+@lru_cache
+def get_async_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Returns a cached instance of the async session factory."""
+    return async_sessionmaker(
+        bind=get_async_engine(),
+        autoflush=False,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -25,18 +31,44 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
     Ensures the session is closed after use.
     """
-    async with AsyncSessionFactory() as session:
+    factory = get_async_session_factory()
+    async with factory() as session:
         try:
             yield session
-            await session.commit() # Commit remaining changes if any, though typically handled in crud
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
         finally:
             await session.close()
 
-async def get_db_session_context_manager() -> AsyncSession:
+@asynccontextmanager
+async def get_db_session_context_manager(existing_session: Optional[AsyncSession] = None) -> AsyncGenerator[AsyncSession, None]:
     """
-    Returns an SQLAlchemy async session for use with a context manager.
+    Provides an SQLAlchemy async session within an asynchronous context manager.
+
+    If an `existing_session` is provided, it yields that session and the caller
+    is responsible for its lifecycle (commit, rollback, close).
+    Otherwise, it creates a new session, and ensures it is committed on
+    successful exit, rolled back on error, and closed regardless.
     """
-    return AsyncSessionFactory()
+    if existing_session:
+        try:
+            yield existing_session
+        # No commit, rollback, or close for existing_session; managed by the caller.
+        # Minimal finally block for safety during the yield itself.
+        finally:
+            pass 
+        return
+
+    # If no existing_session, create and manage a new one as before.
+    factory = get_async_session_factory()
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

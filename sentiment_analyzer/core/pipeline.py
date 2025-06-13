@@ -5,8 +5,9 @@ Coordinates the sequential execution of data fetching, preprocessing,
 sentiment analysis, and result processing for batches of events.
 """
 import asyncio
+import json
 import logging
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession # Only for type hinting if passed around
 
@@ -24,15 +25,17 @@ class SentimentPipeline:
     """
     Orchestrates the sentiment analysis pipeline.
     """
-    def __init__(self):
+    def __init__(self, db_session: Optional[AsyncSession] = None):
         """
         Initializes all necessary components for the pipeline.
         """
         logger.info("Initializing Sentiment Pipeline components...")
+        self._shared_session = db_session
         self.preprocessor = Preprocessor()
         self.sentiment_analyzer = SentimentAnalyzerComponent()
-        self.result_processor = ResultProcessor()
-        self.batch_size = settings.DATA_FETCHER_BATCH_SIZE
+        self.result_processor = ResultProcessor(session=self._shared_session)
+        # Use the configured batch size; maintain backward-compat alias for tests.
+        self.batch_size = getattr(settings, "EVENT_FETCH_BATCH_SIZE", 100)
         logger.info("Sentiment Pipeline components initialized.")
 
     async def process_single_event(self, raw_event: RawEventDTO) -> bool:
@@ -48,18 +51,53 @@ class SentimentPipeline:
         """
         try:
             logger.info(f"Starting processing for raw_event_id: {raw_event.id}, source: {raw_event.source}")
+            logger.debug(f"Event {raw_event.id} received content: {raw_event.content}, type: {type(raw_event.content)}")
 
             # 1. Preprocess Text
-            if raw_event.content is None or not raw_event.content.strip():
-                logger.warning(f"Event {raw_event.id}: Content is empty or None. Moving to DLQ.")
+            text_to_process = ""
+            # First, try to get text from raw_event.content
+            if isinstance(raw_event.content, dict):
+                text_to_process = raw_event.content.get("text", "")
+                logger.debug(f"Event {raw_event.id}: Attempted to extract text from raw_event.content (dict). Found: '{bool(text_to_process)}'")
+            elif isinstance(raw_event.content, str):
+                try:
+                    # Attempt to parse the string as JSON
+                    content_json = json.loads(raw_event.content)
+                    if isinstance(content_json, dict):
+                        text_to_process = content_json.get("text", "")
+                        logger.debug(f"Event {raw_event.id}: Successfully parsed raw_event.content as JSON dict. Found text: '{bool(text_to_process)}'")
+                    else:
+                        # The JSON is valid but not a dict, treat the original string as text
+                        text_to_process = raw_event.content
+                        logger.debug(f"Event {raw_event.id}: Parsed raw_event.content as JSON, but it's not a dict. Using raw string.")
+                except json.JSONDecodeError:
+                    # Not a JSON string, treat as plain text
+                    text_to_process = raw_event.content
+                    logger.debug(f"Event {raw_event.id}: raw_event.content is a non-JSON string. Using raw string.")
+            else:
+                logger.debug(f"Event {raw_event.id}: raw_event.content is neither dict nor str (type: {type(raw_event.content)}). Will check payload.")
+
+            # If text is still empty or only whitespace, try to get it from raw_event.payload
+            if not text_to_process.strip():
+                logger.debug(f"Event {raw_event.id}: Text from raw_event.content is empty. Checking raw_event.payload.")
+                if isinstance(raw_event.payload, dict):
+                    text_to_process = raw_event.payload.get("text", "")
+                    logger.debug(f"Event {raw_event.id}: Attempted to extract text from raw_event.payload (dict). Found: '{bool(text_to_process)}'")
+                else:
+                    logger.debug(f"Event {raw_event.id}: raw_event.payload is not a dict (type: {type(raw_event.payload)}). Cannot extract text.")
+            
+            # Validate extracted text
+            if not text_to_process.strip():
+                logger.warning(f"Event {raw_event.id}: Extracted text content is empty or None after checking content and payload. Moving to DLQ.")
                 await self.result_processor.move_to_dead_letter_queue(
                     raw_event=raw_event,
-                    error_message="Raw event content is empty or None.",
+                    error_message="Extracted text content is empty or None after checking content and payload.",
                     failed_stage="preprocessing_input_validation"
                 )
                 return False
             
-            preprocessed_data = self.preprocessor.preprocess(raw_event.content)
+            logger.info(f"Event {raw_event.id}: Successfully extracted text for processing: '{text_to_process[:100]}...'" )
+            preprocessed_data = self.preprocessor.preprocess(text_to_process)
 
             if not preprocessed_data.is_target_language:
                 logger.info(f"Event {raw_event.id}: Language '{preprocessed_data.detected_language_code}' is not target '{self.preprocessor.target_language}'. Skipping sentiment analysis.")
@@ -131,7 +169,9 @@ class SentimentPipeline:
         logger.info(f"Starting pipeline run. Configured batch size: {self.batch_size}")
         
         # DataFetcher handles its own session for atomic fetch and claim.
-        fetched_events: List[RawEventDTO] = await fetch_and_claim_raw_events(batch_size=self.batch_size)
+        fetched_events: List[RawEventDTO] = await fetch_and_claim_raw_events(
+        batch_size=self.batch_size, db_session=self._shared_session
+    )
 
         if not fetched_events:
             logger.info("No new events fetched to process in this iteration.")

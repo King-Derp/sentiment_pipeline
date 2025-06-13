@@ -8,6 +8,7 @@ from sqlalchemy import Text
 from sqlalchemy import TIMESTAMP
 from sqlalchemy.sql import func
 from sqlalchemy.orm import mapped_column, Mapped
+from sqlalchemy.dialects.postgresql import JSONB  # Add import for JSONB type
 
 from .base import Base
 
@@ -30,6 +31,7 @@ class SentimentResultORM(Base):
         processed_at (datetime): Timestamp when the sentiment analysis was performed (defaults to NOW()).
         model_version (str): Version of the sentiment analysis model used.
         raw_text (str, optional): The original text that was analyzed.
+        sentiment_scores_json (JSON object, optional): JSON object of scores for all sentiment classes.
     """
     __tablename__ = "sentiment_results"
 
@@ -41,6 +43,7 @@ class SentimentResultORM(Base):
     sentiment_score = Column(Float, nullable=False, comment="The calculated sentiment score.")
     sentiment_label = Column(Text, nullable=False, comment="The categorical sentiment label.")
     confidence = Column(Float, nullable=True, comment="Confidence level of the sentiment prediction.")
+    sentiment_scores_json = Column(JSONB, nullable=True, comment="JSON object of scores for all sentiment classes.")
     processed_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), comment="Timestamp of sentiment processing.")
     model_version = Column(Text, nullable=False, comment="Version of the sentiment analysis model used.")
     raw_text = Column(Text, nullable=True, comment="The original text that was analyzed.")
