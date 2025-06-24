@@ -38,6 +38,33 @@ services:
       - sentiment_net
     # The Dockerfile's ENTRYPOINT and CMD will be used unless overridden here
 
+  sentiment_analyzer:
+    build:
+      context: .
+      dockerfile: ./sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer_service
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    environment:
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_USER=${PG_USER}
+      - DB_PASSWORD=${PG_PASSWORD}
+      - DB_NAME=${PG_DB}
+      - ALEMBIC_DATABASE_URL=postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
+      - DB_URL_ASYNC=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
+      - DATABASE_URL=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
+    volumes:
+      - ./sentiment_analyzer:/app/sentiment_analyzer
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    networks:
+      - sentiment_net
+    restart: unless-stopped
+
 volumes:
   timescaledb_data:
 

@@ -17,7 +17,9 @@ COPY pyproject.toml poetry.lock* README.md ./
 RUN poetry config virtualenvs.create false
 
 # Copy application code (must be done before installing dependencies)
-COPY reddit_scraper/reddit_scraper/ /app/reddit_scraper/reddit_scraper/
+# Copy inner package directly to /app/reddit_scraper to avoid double nesting
+# Copy full project directory so nested package structure is preserved
+COPY reddit_scraper/ /app/reddit_scraper/
 
 # Install dependencies
 RUN poetry install --only main --no-interaction --no-ansi
@@ -31,10 +33,11 @@ USER scraper
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/reddit_scraper
+# Ensure root path is on PYTHONPATH so `import reddit_scraper.cli` resolves correctly
+ENV PYTHONPATH="/app${PYTHONPATH:+:$PYTHONPATH}"
 
 # Command to run the application
-ENTRYPOINT ["python", "-m", "reddit_scraper.cli"]
+ENTRYPOINT ["python", "-m", "reddit_scraper.reddit_scraper.cli"]
 
 # CMD to run the scraper with specified config and loglevel
 # The 'scrape' command should come before its options.
