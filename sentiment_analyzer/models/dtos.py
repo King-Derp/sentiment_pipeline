@@ -31,6 +31,42 @@ class RawEventDTO(BaseModel):
     # Changed to Optional[Any] to handle cases where ORM's JSONB content is a dict.
     content: Optional[Any] = None
 
+    # Keys inside `payload` that may contain text content
+    _TEXT_KEYS: tuple[str, ...] = (
+        "text",  # generic key used by some sources/services
+        "title",  # reddit post/comment title
+        "selftext",  # reddit self-post body
+        "body",  # generic key used by APIs for body text
+        "message",  # fallback key
+    )
+
+    def model_post_init(self, __context: Any) -> None:  # noqa: D401, N802
+        """Populate ``content`` automatically if it's missing.
+
+        If ``content`` is *None* or empty we attempt to build it from
+        ``payload`` by concatenating any textual fields we recognise.  This
+        allows the rest of the pipeline to rely on ``raw_event.content``
+        regardless of how the scraper stored the raw JSON.
+        """
+        # If content was explicitly provided and is non-empty, leave as-is
+        if isinstance(self.content, str) and self.content.strip():
+            return
+
+        if not isinstance(self.payload, dict):
+            # Nothing we can extract
+            return
+
+        extracted_parts: list[str] = []
+        for key in self._TEXT_KEYS:
+            value = self.payload.get(key)
+            if isinstance(value, str) and value.strip():
+                extracted_parts.append(value.strip())
+
+        if extracted_parts:
+            # Join with a space to preserve readability
+            self.content = " ".join(extracted_parts)
+
+
     # Metadata columns – optional for unit tests.
     ingested_at: Optional[datetime] = None
     processed: bool = False

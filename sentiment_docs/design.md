@@ -22,12 +22,16 @@
     - [3.2 Output Data](#32-output-data)
       - [3.2.1 `sentiment_results` Table](#321-sentiment_results-table)
       - [3.2.2 `sentiment_metrics` Table](#322-sentiment_metrics-table)
+      - [3.2.3 `dead_letter_events` Table](#323-dead_letter_events-table)
+    - [3.3 TimescaleDB Specific Considerations](#33-timescaledb-specific-considerations)
+      - [Hypertable Foreign Key Constraints: Hypertable-to-Hypertable Limitation](#hypertable-foreign-key-constraints-hypertable-to-hypertable-limitation)
   - [4. Components](#4-components)
-    - [4.1 Data Fetcher](#41-data-fetcher)
-    - [4.2 Preprocessor](#42-preprocessor)
-    - [4.3 Sentiment Analyzer](#43-sentiment-analyzer)
-    - [4.4 Result Processor](#44-result-processor)
-    - [4.5 API Service](#45-api-service)
+    - [4.1 `SentimentPipeline` (Orchestrator)](#41-sentimentpipeline-orchestrator)
+    - [4.2 Data Fetcher](#42-data-fetcher)
+    - [4.3 Preprocessor](#43-preprocessor)
+    - [4.4 Sentiment Analyzer](#44-sentiment-analyzer)
+    - [4.5 Result Processor](#45-result-processor)
+    - [4.6 API Service](#46-api-service)
       - [4.5.1 Endpoints](#451-endpoints)
   - [5. APIs](#5-apis)
   - [6. Configuration](#6-configuration)
@@ -269,48 +273,51 @@ This service expects each row in `raw_events` to match `RawEventDTO` / `RawEvent
 
 #### 3.2.2 `sentiment_metrics` Table
 
-- **Purpose**: Stores aggregated sentiment metrics (like counts, sums of scores) over time buckets, per source, label, and model.
-- **Hypertable**: Yes, partitioned by `metric_timestamp`.
+- **Purpose**: Stores pre-aggregated sentiment metrics (event *count* and *avg_score*) over fixed time buckets for a given data source and sentiment label.
+- **Hypertable**: Yes, partitioned by **`time_bucket`** (start of the aggregation window).
 - **ORM Model**: `SentimentMetricORM`
-- **Key Columns** (Part of composite unique constraint; `id` is the Primary Key):
-  - `id` (UUID, Primary Key)
-  - `metric_timestamp` (TIMESTAMPTZ) - The start of the time bucket (e.g., top of the hour).
-  - `raw_event_source` (TEXT) - Source of the original raw events (e.g., 'reddit', 'twitter').
-  - `sentiment_label` (TEXT) - The sentiment label being aggregated.
-  - `model_version` (TEXT) - Version of the sentiment model used for the results being aggregated.
-  - `metric_name` (TEXT) - Name of the specific metric being stored (e.g., 'event_count', 'confidence_sum').
-- **Metric Value Column**:
-  - `metric_value` (FLOAT) - The value of the specified `metric_name` for this aggregation group.
-- **Notes**:
-  - The combination of `(metric_timestamp, raw_event_source, sentiment_label, model_version, metric_name)` should be unique to ensure each specific metric for an aggregation group is stored once per time bucket.
-  - This structure allows for flexible aggregation. For example, to get the total count of positive sentiments for 'reddit' in an hour, you'd query for `metric_name = 'event_count'` and `sentiment_label = 'positive'`. Average scores or confidences would be calculated at query time by dividing a sum-metric (e.g., 'confidence_sum') by an 'event_count' metric for the same aggregation group (timestamp, source, label, model_version).
-- **Granularity of Buckets:**  
-  - By default, at write‐time we use `time_bucket('1h', occurred_at)`.  
-  - If you later want daily aggregates, you can run a backfill query like:
+- **Primary Key / Unique Constraint**: `(time_bucket, source, source_id, label)` – exactly mirrors the ORM definition.
+- **Columns**
+  | Column | Type | Notes |
+  |--------|------|-------|
+  | `time_bucket` | TIMESTAMPTZ | Start of the bucket (e.g. `2025-06-25 15:00:00+00`). |
+  | `source` | TEXT | Origin of the data (`'reddit'`, `'twitter'`, …). |
+  | `source_id` | TEXT | Secondary identifier from the source (e.g. subreddit, `'unknown'`). |
+  | `label` | TEXT | Sentiment label (`positive`, `negative`, `neutral`, …). |
+  | `count` | INTEGER | Number of events in this bucket/label. |
+  | `avg_score` | FLOAT | Average `sentiment_score` for those events. |
 
-    ```sql
-    INSERT INTO sentiment_metrics (time_bucket, source, source_id, label, count, avg_score)
-    SELECT
-      time_bucket('1d', occurred_at)   AS bucket,
-      source,
-      source_id,
-      sentiment_label,
-      COUNT(*) AS count,
-      AVG(sentiment_score) AS avg_score
-    FROM sentiment_results
-    WHERE occurred_at BETWEEN :start_date AND :end_date
-    GROUP BY bucket, source, source_id, sentiment_label
-    ON CONFLICT (time_bucket, source, source_id, label)
-    DO UPDATE SET
-      count = sentiment_metrics.count + EXCLUDED.count,
-      avg_score = (
-        (sentiment_metrics.avg_score * sentiment_metrics.count)
-        + (EXCLUDED.avg_score * EXCLUDED.count)
-      ) / (sentiment_metrics.count + EXCLUDED.count);
-    ```
+- **Why this simpler schema?**
+  The pipeline currently only needs `count` and `avg_score`. A narrow table keeps inserts fast, avoids writing multiple rows per event, and makes analytical queries trivial. If additional metrics are required later we can add new columns via Alembic migrations or create a parallel "tall" metrics table.
+
+- **Granularity of Buckets:**  
+  By default we write hourly buckets using `time_bucket('1h', occurred_at)`.  
+  To back-fill daily aggregates you can run:
+
+  ```sql
+  INSERT INTO sentiment_metrics (time_bucket, source, source_id, label, count, avg_score)
+  SELECT
+    time_bucket('1d', occurred_at)   AS bucket,
+    source,
+    source_id,
+    sentiment_label,
+    COUNT(*) AS count,
+    AVG(sentiment_score) AS avg_score
+  FROM sentiment_results
+  WHERE occurred_at BETWEEN :start_date AND :end_date
+  GROUP BY bucket, source, source_id, sentiment_label
+  ON CONFLICT (time_bucket, source, source_id, label)
+  DO UPDATE SET
+    count = sentiment_metrics.count + EXCLUDED.count,
+    avg_score = (
+      (sentiment_metrics.avg_score * sentiment_metrics.count)
+      + (EXCLUDED.avg_score * EXCLUDED.count)
+    ) / (sentiment_metrics.count + EXCLUDED.count);
+  ```
 
 - **Handling New Labels:**  
-  - If a sentiment model introduces a brand‐new label (e.g. `"very_positive"`), the first `INSERT … ON CONFLICT …` simply creates a new row for `(time_bucket, source, source_id, 'very_positive')`. Future events with `"very_positive"` will update that same row automatically—no schema change needed.
+  If a sentiment model introduces a brand-new label (e.g. `'very_positive'`), the first `INSERT … ON CONFLICT …` automatically creates the row `(time_bucket, source, source_id, 'very_positive')`. Future events will then update that row.
+
 
 #### 3.2.3 `dead_letter_events` Table
 
