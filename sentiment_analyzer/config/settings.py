@@ -7,6 +7,8 @@ from pathlib import Path
 # Define the root directory of the sentiment_analyzer service
 SERVICE_ROOT_DIR = Path(__file__).parent.parent.resolve()
 DEFAULT_CONFIG_PATH = SERVICE_ROOT_DIR / "config" / "app_config.yaml"
+# Path to the repository root (two levels up from this settings.py)
+PROJECT_ROOT_DIR = SERVICE_ROOT_DIR.parent
 
 class Settings(BaseSettings):
     # Application settings
@@ -67,7 +69,7 @@ class Settings(BaseSettings):
     PIPELINE_RUN_INTERVAL_SECONDS: int = 60
 
     model_config = SettingsConfigDict(
-        env_file= str(SERVICE_ROOT_DIR / ".env"), # Ensure .env path is a string
+        env_file= str(PROJECT_ROOT_DIR / ".env"),  # Load variables from project root .env
         env_file_encoding='utf-8',
         extra='ignore' # Ignore extra fields from env or yaml
     )
