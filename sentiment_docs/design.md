@@ -745,6 +745,15 @@ All endpoints are under `/api/v1/sentiment`. Use standard HTTP status codes:
 
 Because this is a **private API**, authentication (e.g., API key) can be enforced at the ingress layer (e.g. via an API gateway). This service can assume that clients are trusted internal systems, but still should validate inputs thoroughly.
 
+### 5.1 BI Integration (Hybrid Push + DirectQuery)
+
+The service supports real-time and historical visualisation in Power BI using a hybrid strategy:
+
+1. **Real-time stream** – Every time a new `SentimentResultORM` row is written, an async task posts the minimal row data to a Power BI *push dataset* (`POWERBI_PUSH_URL`, `POWERBI_API_KEY`). Tiles in a dashboard update within seconds.
+2. **Historical queries** – Power BI connects to TimescaleDB using DirectQuery (via an on-prem gateway) against optimised SQL views / materialised views.
+3. **Composite model** – A single report relates the push-dataset table and DirectQuery tables on a shared date/time dimension so slicers filter both paths.
+4. **Security** – The service reads the push-dataset credentials from env-vars; the DB exposes a read-only role limited to SELECT. All traffic must be over TLS.
+
 ---
 
 ## 6. Configuration

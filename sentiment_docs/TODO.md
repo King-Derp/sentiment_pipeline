@@ -92,6 +92,12 @@ This document outlines the step-by-step tasks required to implement the Sentimen
   - `[ ]` Create helper utilities for cursor-based pagination (encoding/decoding).
 - `[ ]` **4.3: API Input Validation:**
   - `[ ]` Ensure all API inputs are strictly validated using Pydantic models.
+- `[ ]` **4.4: Power BI Integration:**
+  - `[ ]` Create `integrations/powerbi.py` async client with push logic & retries.
+  - `[ ]` Add `POWERBI_PUSH_URL` & `POWERBI_API_KEY` env vars and load via `settings.py`.
+  - `[ ]` Stream new `SentimentResult` rows to push dataset after commit.
+  - `[ ]` Document gateway & composite-model in `POWERBI.md`.
+
 
 ## Phase 5: Dockerization & Deployment Configuration
 

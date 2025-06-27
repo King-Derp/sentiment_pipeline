@@ -9,7 +9,7 @@ This document details the journey of a single unprocessed event from the `raw_ev
 
 ## 2. Assumptions
 
-- A raw event (conforming to `RawEventDTO`/`RawEventORM`) exists in the `raw_events` TimescaleDB hypertable with `processing_status = 'unprocessed'`.
+- A raw event (conforming to `RawEventDTO`/`RawEventORM`) exists in the `raw_events` TimescaleDB hypertable **where `processed` is `FALSE`**.  *(Note: the previous `processing_status` string column has been removed in favour of a simpler boolean flag plus a `processed_at` timestamp – see `reddit_scraper.models.submission.RawEventORM`)*.
 - The Sentiment Analysis Service, specifically the `SentimentPipeline` main loop, is running.
 - All core components (`DataFetcher`, `Preprocessor`, `SentimentAnalyzerComponent`, `ResultProcessor`) are operational and correctly configured.
 - Database connections are available.
@@ -21,7 +21,7 @@ The following diagram illustrates the flow of a single event through the service
 ```mermaid
 graph TD
     subgraph "TimescaleDB - Input"
-        RE["raw_events (status='unprocessed')"]
+        RE["raw_events (processed = false)"]
     end
 
     subgraph "Sentiment Analysis Service (Core Components)"
@@ -88,8 +88,8 @@ Let's assume our specific event is `event_X`.
   - The following conceptual SQL is executed (via SQLAlchemy ORM):
     ```sql
     UPDATE raw_events
-    SET processing_status = 'claimed', claimed_at = NOW()
-    WHERE id = event_X.id AND processing_status = 'unprocessed' -- Simplified, actual query fetches a batch
+    SET processed = TRUE, processed_at = NOW()
+    WHERE id = event_X.id AND processed = FALSE  -- Simplified, actual query fetches a batch
     RETURNING *;
     ```
   - `event_X` (and others in the batch) has its `processing_status` changed from `'unprocessed'` to `'claimed'` and `claimed_at` is set.
@@ -170,13 +170,14 @@ Let's assume our specific event is `event_X`.
 - **Orchestrator**: `SentimentPipeline.process_single_event(event_X)` completes and returns `True` (for success/skip) or `False` (for DLQ).
 - `SentimentPipeline.run_pipeline_once()` collects results for all events in the batch and logs a summary (total fetched, successful, DLQ'd).
 - `SentimentPipeline.main_loop()` then sleeps for `settings.PIPELINE_RUN_INTERVAL_SECONDS` before initiating a new cycle to fetch another batch of events.
-- **Status of `event_X` in `raw_events` table**: After this cycle, `event_X.processing_status` remains `'claimed'`. The current pipeline implementation does not update it to `'processed'` or `'failed'` in the `raw_events` table itself. Future queries by the `DataFetcher` will ignore it because it's no longer `'unprocessed'`.
+- **Status of `event_X` in `raw_events` table**: After this cycle, `raw_events.processed` remains `TRUE`. The current pipeline implementation does not update it to `'processed'` or `'failed'` in the `raw_events` table itself. Future queries by the `DataFetcher` will ignore it because it's no longer `'unprocessed'`.
 
 ## 5. Possible Final States for `event_X`
 
 1.  **Successfully Processed and Stored**:
     - A new record exists in `sentiment_results` for `event_X`.
     - Relevant counters in `sentiment_metrics` are updated.
+    - `raw_events.processed` for `event_X` is `TRUE`.
     - `raw_events.processing_status` for `event_X` is `'claimed'`.
 
 2.  **Skipped (e.g., Non-Target Language)**:

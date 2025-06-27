@@ -24,6 +24,7 @@ This project aims to build a comprehensive pipeline for collecting data from Red
 -   [Project Structure](#project-structure)
 -   [Contributing](#contributing)
 -   [License](#license)
+-   [Live Dashboards](#live-dashboards)
 
 ## Project Overview
 
@@ -64,6 +65,10 @@ The project utilizes a modular design with the following key components:
 *   **Docker & Docker Compose:** For containerization and orchestration.
 
 ### Database Schema (`raw_events` table)
+
+## Live Dashboards
+
+Real-time and historical sentiment are visualised in Power BI using a *hybrid* push-dataset + DirectQuery model. See [`sentiment_docs/POWERBI.md`](sentiment_docs/POWERBI.md) for setup instructions.
 
 The primary table for storing all collected data is `raw_events`. It is a TimescaleDB hypertable partitioned by the `occurred_at` timestamp.
 

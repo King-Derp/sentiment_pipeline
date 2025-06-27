@@ -253,6 +253,7 @@ Details for tasks in `sentiment_docs/TODO.md - Phase 4`. (To be placed in `senti
         *   Include API routers (defined in separate files, e.g., `endpoints/sentiment.py`).
         *   Set up application-level middleware if needed (e.g., for request logging, custom error handling, CORS).
         *   Define startup and shutdown events if necessary (e.g., to load ML models on startup, close DB connections on shutdown).
+        *   **(Hybrid BI)**: In `startup` event, initialise `PowerBIClient` if `POWERBI_PUSH_URL` is set so rows can be streamed.
 
 ### Task 4.2: Implement API Endpoints (`endpoints/sentiment.py`)
 
@@ -269,6 +270,7 @@ Details for tasks in `sentiment_docs/TODO.md - Phase 4`. (To be placed in `senti
     *   **`GET /api/v1/sentiment/metrics`:**
         *   **Input:** Query parameters for filtering aggregated metrics (e.g., `time_bucket_size` (e.g., 'hour', 'day'), `start_time`, `end_time`, `source`, `sentiment_label`).
         *   **Processing:** Fetches data from the `sentiment_metrics` table based on filters.
+    *   **Real-time streaming:** After each successful insert into `sentiment_results`, enqueue an async call to `powerbi_client.push_row()`.
         *   **Output:** JSON array of `SentimentMetricDTO` objects.
 
 ### Task 4.3: API Input Validation
@@ -278,6 +280,16 @@ Details for tasks in `sentiment_docs/TODO.md - Phase 4`. (To be placed in `senti
     *   Leverage FastAPI's automatic request body validation using Pydantic models for all `POST`/`PUT` requests.
     *   For `GET` request query parameters, define them with type hints in endpoint function signatures. For more complex validation or groups of query parameters, Pydantic models can also be used with `Depends`.
     *   Ensure appropriate HTTP status codes are returned for validation errors (FastAPI handles this well with 422 Unprocessable Entity).
+
+### Task 4.4: Power BI Integration
+
+*   **Objective:** Enable real-time dashboards by streaming new sentiment rows to Power BI and document the DirectQuery setup.
+*   **Sub-tasks:**
+    1.  Create `sentiment_analyzer/integrations/powerbi.py` with an async client handling auth, retry (429), and batching.
+    2.  Add `POWERBI_PUSH_URL` and `POWERBI_API_KEY` to `.env.example`; read via `settings.py`.
+    3.  Wire Result Processor to call `powerbi_client.push_row()` after each DB commit.
+    4.  Write unit tests using `pytest` + `httpx_mock`.
+    5.  Update docs (`POWERBI.md`) with gateway & composite-model instructions.
 
 ---
 
