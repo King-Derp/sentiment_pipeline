@@ -48,6 +48,14 @@ services:
         condition: service_healthy
     env_file:
       - ./.env
+    # Enable GPU access (NVIDIA Container Runtime required on host)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - DB_HOST=timescaledb
       - DB_PORT=5432
@@ -57,6 +65,9 @@ services:
       - ALEMBIC_DATABASE_URL=postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
       - DB_URL_ASYNC=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
       - DATABASE_URL=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
+      # GPU-related env vars (the runtime will honour these)
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - ./sentiment_analyzer:/app/sentiment_analyzer
       - ./alembic:/app/alembic
