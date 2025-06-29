@@ -87,8 +87,8 @@ services:
       - USE_GPU=${USE_GPU:-true}
       
       # GPU Runtime (when enabled)
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
-      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - sentiment_model_cache:/root/.cache/huggingface
     networks:
@@ -100,21 +100,14 @@ services:
       retries: 3
       start_period: 60s
     restart: unless-stopped
-    # GPU support - uncomment the runtime line below if USE_GPU=true and nvidia-docker is installed
-    # runtime: nvidia
+    # GPU support - using standard runtime with device requests
     deploy:
       resources:
-        limits:
-          memory: ${GPU_MEMORY_LIMIT:-4G}
-          cpus: '${GPU_CPU_LIMIT:-2.0}'
         reservations:
-          memory: ${GPU_MEMORY_RESERVATION:-2G}
-          cpus: '${GPU_CPU_RESERVATION:-1.0}'
-          # GPU allocation - uncomment below if USE_GPU=true and you have nvidia-container-runtime
-          # devices:
-          #   - driver: nvidia
-          #     count: ${GPU_COUNT:-1}
-          #     capabilities: [gpu]
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 volumes:
   timescaledb_data:

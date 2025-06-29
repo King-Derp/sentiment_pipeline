@@ -29,10 +29,10 @@ RUN poetry config virtualenvs.create false && \
 # Install ML dependencies with GPU/CPU support based on build argument
 ARG USE_GPU=false
 RUN if [ "$USE_GPU" = "true" ] ; then \
-        echo "Installing GPU-enabled PyTorch..." && \
+        echo "Installing GPU-enabled PyTorch with CUDA 12.1..." && \
         pip install --no-cache-dir \
-            torch==2.2.1+cu118 torchvision==0.17.1+cu118 torchaudio==2.2.1+cu118 \
-            -f https://download.pytorch.org/whl/cu118/torch_stable.html ; \
+            torch==2.2.1+cu121 torchvision==0.17.1+cu121 torchaudio==2.2.1+cu121 \
+            -f https://download.pytorch.org/whl/cu121/torch_stable.html ; \
     else \
         echo "Installing CPU-only PyTorch..." && \
         pip install --no-cache-dir \
