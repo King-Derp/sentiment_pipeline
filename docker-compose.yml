@@ -42,42 +42,83 @@ services:
     build:
       context: .
       dockerfile: ./sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer_service
+      args:
+        USE_GPU: ${USE_GPU:-true}
+    container_name: sentiment_analyzer_api
+    ports:
+      - "${SENTIMENT_API_PORT:-8001}:8001"
     depends_on:
       timescaledb:
         condition: service_healthy
-    env_file:
-      - ./.env
-    # Enable GPU access (NVIDIA Container Runtime required on host)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     environment:
-      - DB_HOST=timescaledb
-      - DB_PORT=5432
-      - DB_USER=${PG_USER}
-      - DB_PASSWORD=${PG_PASSWORD}
-      - DB_NAME=${PG_DB}
-      - ALEMBIC_DATABASE_URL=postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
-      - DB_URL_ASYNC=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
-      - DATABASE_URL=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb:5432/${PG_DB}
-      # GPU-related env vars (the runtime will honour these)
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Database Configuration
+      - PG_HOST=timescaledb_service
+      - PG_PORT=5432
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_DB=${PG_DB}
+      - DATABASE_URL=postgresql+asyncpg://${PG_USER}:${PG_PASSWORD}@timescaledb_service:5432/${PG_DB}
+      - ALEMBIC_DATABASE_URL=postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@timescaledb_service:5432/${PG_DB}
+      
+      # API Configuration
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8001}
+      - WORKERS=${WORKERS:-1}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - DEBUG=${DEBUG:-false}
+      
+      # Security Settings
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-true}
+      - CORS_ALLOW_METHODS=${CORS_ALLOW_METHODS:-GET,POST,PUT,DELETE,OPTIONS}
+      - CORS_ALLOW_HEADERS=${CORS_ALLOW_HEADERS:-*}
+      
+      # PowerBI Integration
+      - POWERBI_PUSH_URL=${POWERBI_PUSH_URL:-}
+      - POWERBI_API_KEY=${POWERBI_API_KEY:-}
+      
+      # ML Model Configuration
+      - USE_GPU_IF_AVAILABLE=${USE_GPU_IF_AVAILABLE:-true}
+      - MODEL_CACHE_DIR=${MODEL_CACHE_DIR:-/app/models}
+      - HF_HOME=/app/models/transformers_cache
+      - HUGGINGFACE_MODEL_NAME=${HUGGINGFACE_MODEL_NAME:-cardiffnlp/twitter-roberta-base-sentiment-latest}
+      - SPACY_MODEL_NAME=${SPACY_MODEL_NAME:-en_core_web_lg}
+      - USE_GPU=${USE_GPU:-true}
+      
+      # GPU Runtime (when enabled)
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
     volumes:
-      - ./sentiment_analyzer:/app/sentiment_analyzer
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
+      - sentiment_model_cache:/root/.cache/huggingface
     networks:
       - sentiment_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
+    # GPU support - uncomment the runtime line below if USE_GPU=true and nvidia-docker is installed
+    # runtime: nvidia
+    deploy:
+      resources:
+        limits:
+          memory: ${GPU_MEMORY_LIMIT:-4G}
+          cpus: '${GPU_CPU_LIMIT:-2.0}'
+        reservations:
+          memory: ${GPU_MEMORY_RESERVATION:-2G}
+          cpus: '${GPU_CPU_RESERVATION:-1.0}'
+          # GPU allocation - uncomment below if USE_GPU=true and you have nvidia-container-runtime
+          # devices:
+          #   - driver: nvidia
+          #     count: ${GPU_COUNT:-1}
+          #     capabilities: [gpu]
 
 volumes:
   timescaledb_data:
+  sentiment_model_cache:
 
 networks:
   sentiment_net:

@@ -24,7 +24,9 @@ from sentiment_analyzer.models import (
     SentimentMetricORM,
     DeadLetterEventORM,
 )
+from sentiment_analyzer.models.dtos import SentimentResultDTO
 from sentiment_analyzer.utils.db_session import get_db_session_context_manager as get_async_db_session
+from sentiment_analyzer.integrations.powerbi import PowerBIClient
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +34,17 @@ class ResultProcessor:
     """
     Handles saving sentiment analysis results, updating metrics, and managing dead-letter events.
     """
-    def __init__(self, session: Optional[AsyncSession] = None):
+    def __init__(self, session: Optional[AsyncSession] = None, powerbi_client: Optional[PowerBIClient] = None):
         """
         Initializes the ResultProcessor.
 
         Args:
             session: An optional SQLAlchemy AsyncSession to use for database operations.
                      If None, a new session will be created for each operation.
+            powerbi_client: An optional PowerBI client for real-time streaming.
         """
         self._shared_session = session
+        self._powerbi_client = powerbi_client
 
     async def save_sentiment_result(
         self,
@@ -81,6 +85,34 @@ class ResultProcessor:
                 await session.commit()
                 await session.refresh(new_result_orm)
                 logger.info(f"Saved sentiment result for raw_event_id: {raw_event.id}")
+                
+                # Stream to PowerBI if client is available
+                if self._powerbi_client:
+                    try:
+                        # Convert ORM to DTO for PowerBI streaming
+                        result_dto = SentimentResultDTO(
+                            id=new_result_orm.id,
+                            event_id=str(new_result_orm.event_id),  # Convert to string for DTO
+                            occurred_at=new_result_orm.occurred_at,
+                            source=new_result_orm.source,
+                            source_id=new_result_orm.source_id,
+                            sentiment_score=new_result_orm.sentiment_score,
+                            sentiment_label=new_result_orm.sentiment_label,
+                            confidence=new_result_orm.confidence,
+                            processed_at=new_result_orm.processed_at,
+                            model_version=new_result_orm.model_version,
+                            raw_text=new_result_orm.raw_text
+                        )
+                        
+                        # Stream to PowerBI (non-blocking)
+                        await self._powerbi_client.push_row(result_dto)
+                        logger.debug(f"Streamed sentiment result to PowerBI for event_id: {raw_event.id}")
+                    except Exception as powerbi_error:
+                        # Don't fail the entire operation if PowerBI streaming fails
+                        logger.warning(
+                            f"Failed to stream result to PowerBI for event_id {raw_event.id}: {powerbi_error}"
+                        )
+                
                 return new_result_orm
             except SQLAlchemyError as e:
                 logger.error(

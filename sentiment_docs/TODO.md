@@ -69,52 +69,71 @@ This document outlines the step-by-step tasks required to implement the Sentimen
   - `[x]` Implement batch processing logic.
   - `[x]` Integrate error handling and logging for each step.
 
-## Phase 4: API Development (in `sentiment_analyzer/api/`)
+## Phase 4: API Development (in `sentiment_analyzer/api/`) ✅ COMPLETED 2025-06-29
 
-- `[ ]` **4.1: Setup FastAPI Application (`main.py` or `app.py`):**
-  - `[ ]` Initialize FastAPI app.
-  - `[ ]` Include routers, middleware (e.g., for logging, error handling).
-- `[ ]` **4.2: Implement API Endpoints (`endpoints/sentiment.py`):**
-  - `[ ]` **`POST /api/v1/sentiment/analyze`:**
-    - `[ ]` Accept text input (validated by Pydantic model).
-    - `[ ]` Perform preprocessing and sentiment analysis (on-the-fly).
-    - `[ ]` Return sentiment score, label, confidence, model version.
-  - `[ ]` **`GET /api/v1/sentiment/events`:**
-    - `[ ]` Implement query parameters for filtering (time range, source, source_id, label).
-    - `[ ]` Fetch data from `sentiment_results` table.
-    - `[ ]` Return list of `SentimentResultDTO`.
-    - `[ ]` Implement cursor-based pagination.
-  - `[ ]` **`GET /api/v1/sentiment/metrics`:**
-    - `[ ]` Implement query parameters for filtering (time range, bucket, source, source_id, label).
-    - `[ ]` Fetch data from `sentiment_metrics` table.
-    - `[ ]` Return list of `SentimentMetricDTO`.
-    - `[ ]` Implement cursor-based pagination.
-  - `[ ]` Create helper utilities for cursor-based pagination (encoding/decoding).
-- `[ ]` **4.3: API Input Validation:**
-  - `[ ]` Ensure all API inputs are strictly validated using Pydantic models.
-- `[ ]` **4.4: Power BI Integration:**
-  - `[ ]` Create `integrations/powerbi.py` async client with push logic & retries.
-  - `[ ]` Add `POWERBI_PUSH_URL` & `POWERBI_API_KEY` env vars and load via `settings.py`.
-  - `[ ]` Stream new `SentimentResult` rows to push dataset after commit.
-  - `[ ]` Document gateway & composite-model in `POWERBI.md`.
+- `[x]` **4.1: Setup FastAPI Application (`main.py` or `app.py`):**
+  - `[x]` Initialize FastAPI app.
+  - `[x]` Include routers, middleware (e.g., for logging, error handling).
+- `[x]` **4.2: Implement API Endpoints (`endpoints/sentiment.py`):**
+  - `[x]` **`POST /api/v1/sentiment/analyze`:**
+    - `[x]` Accept text input (validated by Pydantic model).
+    - `[x]` Perform preprocessing and sentiment analysis (on-the-fly).
+    - `[x]` Return sentiment score, label, confidence, model version.
+  - `[x]` **`POST /api/v1/sentiment/analyze/bulk`:**
+    - `[x]` Accept multiple text inputs for bulk analysis.
+    - `[x]` Return array of sentiment analysis results.
+  - `[x]` **`GET /api/v1/sentiment/events`:**
+    - `[x]` Implement query parameters for filtering (time range, source, source_id, label).
+    - `[x]` Fetch data from `sentiment_results` table.
+    - `[x]` Return list of `SentimentResultDTO`.
+    - `[x]` Implement cursor-based pagination.
+  - `[x]` **`GET /api/v1/sentiment/metrics`:**
+    - `[x]` Implement query parameters for filtering (time range, bucket, source, source_id, label).
+    - `[x]` Fetch data from `sentiment_metrics` table.
+    - `[x]` Return list of `SentimentMetricDTO`.
+    - `[x]` Implement cursor-based pagination.
+  - `[x]` Create helper utilities for cursor-based pagination (encoding/decoding).
+- `[x]` **4.3: API Input Validation:**
+  - `[x]` Ensure all API inputs are strictly validated using Pydantic models.
+- `[x]` **4.4: Power BI Integration:**
+  - `[x]` Create `integrations/powerbi.py` async client with push logic & retries.
+  - `[x]` Add `POWERBI_PUSH_URL` & `POWERBI_API_KEY` env vars and load via `settings.py`.
+  - `[x]` Stream new `SentimentResult` rows to push dataset after commit.
+  - `[x]` Document gateway & composite-model in `POWERBI.md`.
+
+### Discovered During Phase 4 Work (2025-06-29):
+- `[x]` ~~Create database utility module (`utils/database.py`) for FastAPI dependency injection.~~ (Removed - redundant with existing `db_session.py`)
+- `[x]` Add comprehensive unit tests for API endpoints (`tests/test_api_endpoints.py`).
+- `[x]` Add comprehensive unit tests for PowerBI integration (`tests/test_powerbi_integration.py`).
+- `[x]` Wire Result Processor to call PowerBI client for real-time streaming.
+- `[x]` Add integration tests for complete API workflow (`tests/test_api_integration.py`).
+- `[x]` Review and tune CORS and security settings for production.
+- `[x]` Add API documentation (OpenAPI/Swagger) and usage examples (`API_EXAMPLES.md`).
 
 
-## Phase 5: Dockerization & Deployment Configuration
+## Phase 5: Dockerization & Deployment Configuration ✅
 
-- `[ ]` **5.1: Create `Dockerfile` for the Sentiment Service:**
-  - `[ ]` Include steps to install dependencies (Python, system libraries if any).
-  - `[ ]` Copy application code.
-  - `[ ]` Set up entry point (e.g., to run Uvicorn for API, or a script for the batch processor).
-  - `[ ]` Ensure spaCy and Hugging Face models are handled correctly (download during build or mount if large).
-- `[ ]` **5.2: Update `docker-compose.yml` (Project Root):**
-  - `[ ]` Add a service definition for `sentiment-analyzer`.
-  - `[ ]` Configure build context to the `sentiment_analyzer` directory.
-  - `[ ]` Set up environment variables (DB connection, model paths, API port).
-  - `[ ]` Define dependencies (e.g., `depends_on: timescaledb`).
-  - `[ ]` Configure volume mounts if needed (e.g., for models, config files if not baked into image).
-  - `[ ]` Add health checks.
-- `[ ]` **5.3: Environment Variables (`.env.example` file):**
-  - `[ ]` Ensure all necessary sentiment-service-specific environment variables are documented with examples in the project's `.env.example` file.
+- `[x]` **5.1: Create `Dockerfile` for the Sentiment Service:**
+  - `[x]` Include steps to install dependencies (Python, system libraries if any).
+  - `[x]` Copy application code.
+  - `[x]` Set up entry point (e.g., to run Uvicorn for API, or a script for the batch processor).
+  - `[x]` Ensure spaCy and Hugging Face models are handled correctly (download during build or mount if large).
+- `[x]` **5.2: Update `docker-compose.yml` (Project Root):**
+  - `[x]` Add a service definition for `sentiment-analyzer`.
+  - `[x]` Configure build context to the `sentiment_analyzer` directory.
+  - `[x]` Set up environment variables (DB connection, model paths, API port).
+  - `[x]` Define dependencies (e.g., `depends_on: timescaledb`).
+  - `[x]` Configure volume mounts if needed (e.g., for models, config files if not baked into image).
+  - `[x]` Add health checks.
+- `[x]` **5.3: Environment Variables (`.env.example` file):**
+  - `[x]` Ensure all necessary sentiment-service-specific environment variables are documented with examples in the project's `.env.example` file.
+
+### Additional Phase 5 Enhancements Completed (2025-06-29):
+- `[x]` **Multi-stage Dockerfile** with optimized production build and security (non-root user).
+- `[x]` **Enhanced startup script** with database connection testing and graceful error handling.
+- `[x]` **Production-ready docker-compose** with resource limits, health checks, and model caching.
+- `[x]` **Comprehensive deployment guide** (`DEPLOYMENT.md`) with troubleshooting and production setup.
+- `[x]` **Database health check utility** (`utils/db_health.py`) for startup validation.
 
 ## Phase 6: Testing
 

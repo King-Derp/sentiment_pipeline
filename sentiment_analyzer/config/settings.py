@@ -1,6 +1,6 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import PostgresDsn, field_validator
+from pydantic import PostgresDsn, field_validator, Field
 import yaml
 from pathlib import Path
 
@@ -17,6 +17,17 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8001 # Different from potential main app port
+    
+    # Security settings
+    ALLOWED_HOSTS: Union[str, list[str]] = "localhost,127.0.0.1,0.0.0.0"
+    CORS_ORIGINS: Union[str, list[str]] = "http://localhost:3000,http://localhost:8080"
+    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_METHODS: Union[str, list[str]] = "GET,POST"
+    CORS_ALLOW_HEADERS: Union[str, list[str]] = "*"
+    
+    # Rate limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 100
 
     # Database settings
     DB_HOST: str = "localhost"
@@ -50,6 +61,27 @@ class Settings(BaseSettings):
             path=f"/{db_name or ''}",
         ))
 
+    def model_post_init(self, __context) -> None:
+        """Parse comma-separated strings into lists after model initialization."""
+        # Parse ALLOWED_HOSTS
+        if isinstance(self.ALLOWED_HOSTS, str):
+            self.ALLOWED_HOSTS = [host.strip() for host in self.ALLOWED_HOSTS.split(',') if host.strip()]
+        
+        # Parse CORS_ORIGINS
+        if isinstance(self.CORS_ORIGINS, str):
+            self.CORS_ORIGINS = [origin.strip() for origin in self.CORS_ORIGINS.split(',') if origin.strip()]
+        
+        # Parse CORS_ALLOW_METHODS
+        if isinstance(self.CORS_ALLOW_METHODS, str):
+            self.CORS_ALLOW_METHODS = [method.strip() for method in self.CORS_ALLOW_METHODS.split(',') if method.strip()]
+        
+        # Parse CORS_ALLOW_HEADERS
+        if isinstance(self.CORS_ALLOW_HEADERS, str):
+            if self.CORS_ALLOW_HEADERS == "*":
+                self.CORS_ALLOW_HEADERS = ["*"]
+            else:
+                self.CORS_ALLOW_HEADERS = [header.strip() for header in self.CORS_ALLOW_HEADERS.split(',') if header.strip()]
+
     # Model settings
     SPACY_MODEL_NAME: str = "en_core_web_lg"
     FINBERT_MODEL_NAME: str = "ProsusAI/finbert"
@@ -67,6 +99,10 @@ class Settings(BaseSettings):
 
     # Pipeline settings
     PIPELINE_RUN_INTERVAL_SECONDS: int = 60
+
+    # PowerBI Integration settings
+    POWERBI_PUSH_URL: Optional[str] = None
+    POWERBI_API_KEY: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file= str(PROJECT_ROOT_DIR / ".env"),  # Load variables from project root .env
