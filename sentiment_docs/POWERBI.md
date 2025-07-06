@@ -2,6 +2,9 @@
 
 This document describes how to set up and configure Power BI integration with the Sentiment Pipeline, supporting both real-time streaming and historical analysis.
 
+**Version:** 1.1  
+**Date:** 2025-07-06
+
 ## Overview
 
 The sentiment analyzer service provides a hybrid Power BI integration that combines:
@@ -86,6 +89,7 @@ The streaming dataset should have the following fields:
 | `sentiment_label` | Text | Sentiment category ("positive", "negative", "neutral") |
 | `confidence` | Decimal | Confidence score (0.0 to 1.0) |
 | `model_version` | Text | Version of the sentiment analysis model used |
+| `raw_text` | Text | The original, unprocessed text of the event |
 
 > **Note:** The field names must match exactly between your Power BI dataset and the data being sent from the application.
 
@@ -126,12 +130,12 @@ Add the following variables to your `.env` file:
 POWERBI_PUSH_URL=https://api.powerbi.com/beta/[workspace-id]/datasets/[dataset-id]/rows?[key]
 POWERBI_API_KEY=optional_api_key_if_required
 
-# Database Connection for DirectQuery
-DB_HOST=timescaledb
-DB_PORT=5432
-DB_NAME=sentiment
-DB_USER=powerbi_user
-DB_PASSWORD=your_secure_password
+# Database Connection for DirectQuery (use read-only credentials)
+PG_HOST=timescaledb
+PG_PORT=5432
+PG_DB=sentiment_pipeline_db
+PG_USER=powerbi_user
+PG_PASSWORD=your_secure_password
 ```
 
 ### Settings
@@ -149,11 +153,11 @@ POWERBI_RETRY_DELAY: float = 1.0
 POWERBI_BATCH_SIZE: int = 100
 
 # Database Settings (for DirectQuery)
-DB_HOST: str = "timescaledb"
-DB_PORT: int = 5432
-DB_NAME: str = "sentiment"
-DB_USER: str = "powerbi_user"
-DB_PASSWORD: str = ""
+PG_HOST: str = "timescaledb"
+PG_PORT: int = 5432
+PG_DB: str = "sentiment_pipeline_db"
+PG_USER: str = "powerbi_user"
+PG_PASSWORD: str = ""
 ```
 
 ## Usage

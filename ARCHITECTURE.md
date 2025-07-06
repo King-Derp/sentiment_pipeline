@@ -1,112 +1,159 @@
 # Sentiment Pipeline Architecture
 
-**Version:** 1.0
-**Date:** 2025-05-28
+**Version:** 2.0
+**Date:** 2025-07-06
 
 ## 1. Introduction
 
-The Sentiment Pipeline project is designed to scrape data from various sources (initially Reddit), store it efficiently, and prepare it for downstream sentiment analysis and other data processing tasks. The architecture emphasizes scalability, maintainability, and robust data management.
+The Sentiment Pipeline project is a comprehensive system designed to scrape data from various sources (initially Reddit), store it efficiently, perform sentiment analysis, and provide aggregated metrics and results via an API. The architecture emphasizes scalability, maintainability, robust data management, and operational readiness.
 
-## 2. Core Components
+## 2. System Architecture Diagram
 
-### 2.1. Reddit Scraper (`reddit_scraper` service)
+```mermaid
+graph TD
+    subgraph "Data Sources"
+        A[Reddit API]
+    end
 
-*   **Purpose:** Collects posts and comments from specified subreddits using the Reddit API (`asyncpraw`).
-*   **Functionality:**
-    *   Configurable target subreddits and scraping parameters (e.g., number of posts, timeframes).
-    *   Handles Reddit API rate limits and error conditions.
-    *   Transforms raw API data into a standardized `RawEventDTO` format.
-    *   Sends data to the Data Ingestion Pipeline.
+    subgraph "Data Ingestion"
+        B(Reddit Scraper) -- DTOs --> C{Data Sinks};
+        C -- ORM --> D[TimescaleDB];
+        C -- Raw Data --> E[CSV Backup];
+    end
+
+    subgraph "Sentiment Analysis Service"
+        F(Background Worker) -- Fetches Unprocessed --> D;
+        F -- Analyzes --> G(ML Model);
+        G -- Results --> F;
+        F -- Stores Results/Metrics --> D;
+        F -- Failed Events --> H(Dead Letter Queue);
+    end
+
+    subgraph "API & Consumers"
+        I(FastAPI) -- Queries --> D;
+        J[Power BI] -- Pulls/Pushes --> I;
+        K[User] -- HTTP Requests --> I;
+    end
+
+    D -- Stores --> H
+
+    style F fill:#f9f,stroke:#333,stroke-width:2px
+    style I fill:#ccf,stroke:#333,stroke-width:2px
+```
+
+## 3. Core Components
+
+### 3.1. Reddit Scraper (`reddit_scraper` service)
+
+*   **Purpose:** Collects posts from specified subreddits using the Reddit API (`asyncpraw`).
+*   **Functionality:** Transforms raw API data into a standardized `RawEventDTO` format and sends it to the data sinks.
 *   **Key Technologies:** Python, `asyncpraw`, `aiohttp`.
 
-### 2.2. Data Storage (TimescaleDB)
+### 3.2. Data Storage (TimescaleDB)
 
-*   **Purpose:** Provides a scalable and efficient time-series database for storing all raw event data.
-*   **Technology:** TimescaleDB (an extension for PostgreSQL), run as a Docker container (`timescaledb_service`).
-*   **Key Features Utilized:**
-    *   **Hypertables:** The primary data table (`raw_events`) is a TimescaleDB hypertable, automatically partitioned by time.
-    *   **Time-based Partitioning:** Data is partitioned based on the `occurred_at` timestamp, enabling efficient time-series queries and data management.
-    *   **SQL Interface:** Standard PostgreSQL interface for data access and management.
+*   **Purpose:** Provides a scalable time-series database for all raw and processed data.
+*   **Technology:** TimescaleDB (PostgreSQL extension), run as a Docker container.
+*   **Key Features:** Hypertables for time-based partitioning, enabling efficient queries and data management.
 
-### 2.3. Data Ingestion Pipeline
+### 3.3. Sentiment Analyzer (`sentiment_analyzer` service)
 
-*   **Purpose:** Manages the flow of data from scrapers to the database and secondary storage.
+*   **Purpose:** Performs sentiment analysis on raw events and serves the results.
 *   **Components:**
-    *   **`RawEventDTO` (Data Transfer Object):** A Pydantic model defining the structure of data records passed from scrapers to sinks. This ensures data consistency before it reaches the storage layer.
-    *   **Sinks:** Responsible for writing data to storage systems.
-        *   **`SQLAlchemyPostgresSink`:** The primary sink, responsible for writing `RawEventDTO` data to the `raw_events` table in TimescaleDB. It uses SQLAlchemy Core for efficient bulk inserts and handles idempotency using `ON CONFLICT DO NOTHING` based on a unique constraint.
-        *   **`CsvSink`:** A secondary sink that writes data to CSV files, typically organized by source, subreddit, and date. This serves as a backup or for specific offline analysis needs.
-    *   **`RawEventORM` (SQLAlchemy Model):** Defines the mapping between Python objects and the `raw_events` database table. Used by the `SQLAlchemyPostgresSink`.
+    *   **Background Worker:** Periodically fetches unprocessed events from the `raw_events` table, performs sentiment analysis using a pre-trained model, and stores the output in the `sentiment_results` and `sentiment_metrics` tables.
+    *   **FastAPI Application:** Exposes RESTful endpoints for querying sentiment results and metrics, checking system health, and integrating with external services like Power BI.
+    *   **Result Processor:** A core utility that handles the logic for saving analysis results, calculating aggregate metrics, and pushing data to the Dead Letter Queue on failure.
+*   **Key Technologies:** Python, FastAPI, Hugging Face Transformers, PyTorch, SQLAlchemy.
 
-## 3. Data Model
+## 4. Data Models & Database Schemas
 
-### 3.1. `raw_events` Table (TimescaleDB Hypertable)
+Schema management is handled by **Alembic**. The schemas below reflect the final state after all migrations.
 
-*   **Purpose:** Stores all raw events collected from various sources.
-*   **Schema:**
-    *   `id` (TEXT): The unique identifier of the event from its source (e.g., Reddit's base36 ID for submissions/comments). Part of the composite primary key.
-    *   `occurred_at` (TIMESTAMPTZ): The timestamp when the event originally occurred (e.g., post creation time). This is timezone-aware (UTC) and used for hypertable partitioning. Part of the composite primary key.
-    *   `source` (TEXT): The origin of the data (e.g., "reddit", "twitter").
-    *   `source_id` (TEXT): A secondary identifier from the source, if applicable (e.g., subreddit name for Reddit events).
-    *   `event_type` (TEXT): Type of event (e.g., "submission", "comment").
-    *   `payload` (JSONB): The raw data payload from the source, stored as a JSON object.
-    *   `ingested_at` (TIMESTAMPTZ): Timestamp when the event was ingested into the pipeline (defaults to `NOW()`).
-    *   `processed` (BOOLEAN): Flag indicating if the event has been processed by sentiment analysis (defaults to `FALSE`).
-    *   `processed_at` (TIMESTAMPTZ): Timestamp when sentiment analysis was completed for this event (NULL until processed).
-*   **Primary Key (Composite):** (`id`, `occurred_at`)
-*   **Unique Constraint:** (`source`, `source_id`, `event_type`, `id`, `occurred_at`) - This ensures idempotency for records. *Note: The exact fields in the unique constraint might vary slightly based on the latest Alembic migration but generally cover these to uniquely identify an event from a source.*
-*   **Hypertable Partitioning Column:** `occurred_at`
-*   **Indexes:** 
-    * Appropriate indexes are defined on `occurred_at`, (`source`, `source_id`), and other frequently queried columns as per Alembic migrations.
-    * Specialized index `ix_raw_events_processed_occurred_at` on (`processed`, `occurred_at`) with `WHERE processed = FALSE` for efficiently fetching unprocessed events for sentiment analysis.
+### 4.1. `raw_events` Table
 
-### 3.2. `RawEventORM` (SQLAlchemy Model)
+*   **Purpose:** Stores all raw event data collected from sources.
+*   **Hypertable:** Partitioned by `occurred_at`.
 
-*   Located in `common/models/raw_event.py` (or similar path).
-*   Defines the SQLAlchemy ORM mapping for the `raw_events` table, used by `SQLAlchemyPostgresSink`.
-*   Includes `__table_args__` for defining the composite primary key, unique constraint, and TimescaleDB-specific options if necessary (though hypertable creation is typically handled by Alembic raw SQL).
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | BIGINT | PK, Auto-increment | Auto-incrementing primary key. |
+| `source` | TEXT | NOT NULL | Source system (e.g., 'reddit'). |
+| `source_id` | TEXT | NOT NULL | Unique identifier within the source system. |
+| `occurred_at` | TIMESTAMPTZ | PK, NOT NULL | Timestamp when the event originally occurred. |
+| `payload` | JSONB | NOT NULL | Full event payload as JSON. |
+| `ingested_at` | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Timestamp when the event was ingested. |
+| `processed` | BOOLEAN | NOT NULL, DEFAULT false | Flag indicating if sentiment analysis has been run. |
+| `processed_at` | TIMESTAMPTZ | NULL | Timestamp when sentiment analysis was completed. |
 
-### 3.3. `RawEventDTO` (Pydantic Model)
+*   **Composite Primary Key:** `(id, occurred_at)`
+*   **Unique Constraint:** `(source, source_id, occurred_at)`
+*   **Key Index:** A partial index on `(processed, occurred_at)` where `processed = false` for efficient fetching by the background worker.
 
-*   Located in `common/dto/raw_event.py` (or similar path).
-*   Defines the structure and validation rules for data records before they are processed by sinks. Ensures data quality and consistency from different scrapers.
-*   Fields typically mirror the `raw_events` table but may omit auto-generated fields like `ingested_at` or `processed` if these are handled by the sink/database.
+### 4.2. `sentiment_results` Table
 
-## 4. Schema Management (Alembic)
+*   **Purpose:** Stores the detailed output of each sentiment analysis task.
+*   **Hypertable:** Partitioned by `processed_at`.
 
-*   **Purpose:** Manages all database schema changes (creating tables, adding columns, defining indexes, creating hypertables).
-*   **Workflow:**
-    1.  SQLAlchemy models (like `RawEventORM`) define the desired state.
-    2.  `alembic revision --autogenerate -m "description"` generates a migration script.
-    3.  Developers edit the script to add TimescaleDB-specific commands (e.g., `CREATE EXTENSION IF NOT EXISTS timescaledb;`, `SELECT create_hypertable(...);`).
-    4.  `alembic upgrade head` applies migrations to the database.
-*   **Configuration:**
-    *   `alembic.ini`: Main configuration file for Alembic.
-    *   `alembic/env.py`: Configures database connection (reads from `.env`) and `target_metadata` (from `RawEventORM`'s `Base.metadata`).
-*   **Location:** `alembic/` directory in the project root.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | BIGINT | PK, Auto-increment | Unique identifier for the sentiment result. |
+| `event_id` | BIGINT | NOT NULL | Identifier of the original event in `raw_events`. |
+| `occurred_at` | TIMESTAMPTZ | NOT NULL | Timestamp when the original event occurred. |
+| `source` | TEXT | NOT NULL | The origin of the data (e.g., 'reddit'). |
+| `source_id` | TEXT | NOT NULL | A secondary identifier from the source. |
+| `sentiment_score` | FLOAT | NOT NULL | The calculated primary sentiment score. |
+| `sentiment_label` | TEXT | NOT NULL | The categorical sentiment label. |
+| `sentiment_scores_json` | JSONB | NULL | JSON object of scores for all sentiment classes. |
+| `confidence` | FLOAT | NULL | Confidence level of the sentiment prediction. |
+| `processed_at` | TIMESTAMPTZ | PK, NOT NULL, DEFAULT now() | Timestamp of sentiment processing. |
+| `model_version` | TEXT | NOT NULL | Version of the sentiment analysis model used. |
+| `raw_text` | TEXT | NULL | The original text that was analyzed. |
 
-## 5. Configuration
+*   **Composite Primary Key:** `(id, processed_at)`
 
-*   **`.env` file:** Located in the project root, stores sensitive information and environment-specific settings (database credentials, API keys, service configurations). Not committed to version control.
-*   **`docker-compose.yml`:** Defines services, networks, volumes, and how environment variables from `.env` are passed to containers.
-*   **Service-specific configurations:** Some services (like the Reddit scraper) might have their own YAML configuration files for non-sensitive parameters (e.g., target subreddits).
+### 4.3. `sentiment_metrics` Table
 
-## 6. Deployment
+*   **Purpose:** Stores aggregated sentiment metrics over time buckets for efficient reporting.
+*   **Hypertable:** Partitioned by `time_bucket`.
 
-*   **Docker:** All services (Reddit Scraper, TimescaleDB, potentially future services) are containerized using Docker.
-*   **Docker Compose:** Used to orchestrate multi-container deployment for local development and testing. Defines service dependencies, networks, and volumes.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `time_bucket` | TIMESTAMPTZ | PK, NOT NULL | Start of the time bucket for aggregation. |
+| `source` | TEXT | PK, NOT NULL | Origin of the data. |
+| `source_id` | TEXT | PK, NOT NULL | Secondary identifier from the source. |
+| `label` | TEXT | PK, NOT NULL | Categorical sentiment label. |
+| `count` | INTEGER | NOT NULL | Number of results in this bucket and category. |
+| `avg_score` | FLOAT | NOT NULL | Average sentiment score for this bucket. |
 
-## 7. Data Flow Summary
+*   **Composite Primary Key:** `(time_bucket, source, source_id, label)`
 
-1.  **Scraping:** `reddit_scraper` fetches data from Reddit.
-2.  **DTO Creation:** Raw data is transformed into `RawEventDTO` objects.
-3.  **Sink Processing:** `RawEventDTOs` are passed to the `CompositeSink`.
-    *   `SQLAlchemyPostgresSink` maps DTOs to `RawEventORM` objects and batch-inserts them into the `raw_events` table in TimescaleDB.
-    *   `CsvSink` writes DTO data to CSV files.
-4.  **Database Storage:** Data is persisted in TimescaleDB, partitioned by `occurred_at`.
-5.  **Downstream Access:** Other services can query TimescaleDB for `raw_events` data for analysis, processing, etc.
+### 4.4. `dead_letter_events` Table
 
-## 8. Monitoring & Testing
+*   **Purpose:** Stores events that failed during processing for later inspection.
+*   **Hypertable:** Partitioned by `failed_at`.
 
-*   **Monitoring:** Basic monitoring via Docker logs. `timescaledb/sql_perf_query.md` provides queries for DB performance. Advanced monitoring (e.g., Prometheus) is a future consideration.
-*   **Testing:** Pytest is used for unit and integration tests. Test plans like `timescaledb/tests_implementation_plan.md` and `common/tests/comment_scraper_test_plan.md` outline strategies for testing database interactions and scraper components. (Note: These plans may need updates to align with this consolidated architecture document).
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PK, Auto-increment | Unique identifier for the dead-letter record. |
+| `event_payload` | JSONB | NULL | Payload of the original event. |
+| `error_msg` | TEXT | NULL | Error message detailing the failure. |
+| `failed_at` | TIMESTAMPTZ | PK, NOT NULL, DEFAULT now() | Timestamp of the failure. |
+
+*   **Composite Primary Key:** `(id, failed_at)`
+
+## 5. Data Flow Summary
+
+1.  **Scraping & Ingestion:** `reddit_scraper` fetches data, creates `RawEventDTO` objects, and uses `SQLAlchemyPostgresSink` to insert them into the `raw_events` table.
+2.  **Sentiment Processing Loop:**
+    *   The `sentiment_analyzer` **Background Worker** periodically queries the `raw_events` table for records where `processed = false`.
+    *   It claims a batch of events by setting `processed = true` and `processed_at = NOW()`.
+    *   For each event, it performs sentiment analysis on the text payload.
+    *   Successful results are written to the `sentiment_results` table.
+    *   Aggregate metrics are calculated and upserted into the `sentiment_metrics` table.
+    *   If an event fails processing, it is written to the `dead_letter_events` table.
+3.  **API Serving:** The **FastAPI** application provides endpoints for clients like Power BI or other users to query the `sentiment_results` and `sentiment_metrics` tables.
+
+## 6. Deployment & Configuration
+
+*   **Docker & Docker Compose:** All services are containerized and orchestrated using `docker-compose.yml` for consistent development and deployment.
+*   **Configuration:** Environment variables (`.env` file) are used for all sensitive and environment-specific settings, including database credentials, API keys, and model configuration.
+*   **Schema Management:** Alembic manages all database schema changes, including the creation of tables and hypertables.

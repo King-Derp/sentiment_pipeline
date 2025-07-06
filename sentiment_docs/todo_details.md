@@ -7,6 +7,20 @@ This document provides a detailed breakdown of the tasks outlined in `sentiment_
 
 ---
 
+## ✅ Status Update (2025-07-03)
+
+The high-level tracker (`sentiment_docs/TODO.md`) now shows **Phases 1–6 complete** and **Phase 7 in progress**. The following detailed tasks were finished during development on 2025-06-29 and can be marked **DONE**:
+
+* Phase 2 – Task 2.2 (Alembic setup, including Dead-Letter Queue migrations)
+* Phase 3 – All core components (`data_fetcher`, `preprocessor`, `sentiment_analyzer`, `result_processor`, pipeline orchestrator)
+* Phase 4 – API service (all endpoints, PowerBI streaming, security hardening)
+* Phase 5 – Dockerization & deployment artifacts (multi-stage Dockerfile, compose file, start script, `.env.example`)
+* Phase 6 – Unit & integration tests with >90 % coverage
+
+Any remaining unchecked items below belong to Phase 7 refinement and documentation work.
+
+---
+
 ## Phase 1: Project Setup & Foundation (Sentiment Service Module)
 
 Details for tasks in `sentiment_docs/TODO.md - Phase 1`.

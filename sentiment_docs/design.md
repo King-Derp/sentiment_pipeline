@@ -1,8 +1,8 @@
 # Sentiment Analysis Service Design
 
-**Version:** 1.2  
-**Last Updated:** 2025-06-09  
-**Status:** Draft
+**Version:** 1.3  
+**Last Updated:** 2025-07-06  
+**Status:** Final
 
 > **Note:** This service consumes raw events from the `raw_events` hypertable, each conforming to the `RawEventDTO` / `RawEventORM` contract (see `models/raw_event.py`). Any changes to that contract must be mirrored here.
 
@@ -65,8 +65,8 @@ The **Sentiment Analysis Service** reads raw text events from the `raw_events` h
 The system follows a modular, event-driven pipeline, orchestrated by the `SentimentPipeline` component. The key processing stages are:
 
 1. **Data Fetcher**  
-   - Claims unprocessed rows from `raw_events` based on their `processing_status` (e.g., 'unprocessed').
-   - Atomically updates status to 'claimed' to prevent multiple workers processing the same event.  
+   - Claims unprocessed rows from `raw_events` based on their `processed` boolean flag.
+   - Atomically updates the `processed` flag to `TRUE` to prevent multiple workers processing the same event.  
 
 2. **Preprocessor**  
    - Cleans text (removes URLs, special characters, emojis)  
@@ -127,13 +127,13 @@ graph TD
    - Every X seconds (configurable, default `PIPELINE_RUN_INTERVAL_SECONDS`), the `SentimentPipeline` triggers the `DataFetcher` component, which runs:
      ```sql
      UPDATE raw_events
-     SET processing_status = 'claimed', claimed_at = NOW()
-     WHERE processing_status = 'unprocessed'
+     SET processed = TRUE, processed_at = NOW()
+     WHERE processed IS FALSE
      ORDER BY occurred_at ASC
      LIMIT :batch_size
      RETURNING *;
      ```
-   - This `UPDATE … RETURNING` is in a single transaction, guaranteeing no two fetchers pick the same rows. The `processing_status` field is an enum (e.g., `unprocessed`, `claimed`, `processed`, `failed`).  
+   - This `UPDATE … RETURNING` runs in a single transaction, guaranteeing no two fetchers pick the same rows. The boolean `processed` column combined with the `processed_at` timestamp replaces the earlier enum-based status field.  
 
 2. **Preprocessing**  
    - For each fetched event:  
@@ -221,9 +221,10 @@ graph TD
    - This approach allows for various metrics to be tracked. Average scores or confidences can be calculated at query time by dividing the sum-metric by the 'event_count' for the same aggregation group.
 
 5. **API Exposure**  
-   - Clients call `/api/v1/sentiment/analyze?text=…` for on‐the‐fly analysis.  
-   - Clients query `/api/v1/sentiment/events?…` to retrieve stored results.  
-   - Clients query `/api/v1/sentiment/metrics?…` to get aggregated metrics for dashboards.  
+   - Clients call `POST /api/v1/sentiment/analyze` with a JSON body for on-the-fly analysis of a single text.
+   - Clients call `POST /api/v1/sentiment/analyze/bulk` with a JSON body for on-the-fly analysis of multiple texts.
+   - Clients query `GET /api/v1/sentiment/events?…` to retrieve stored results.
+   - Clients query `GET /api/v1/sentiment/metrics?…` to get aggregated metrics for dashboards.  
 
 ---
 
@@ -265,6 +266,7 @@ This service expects each row in `raw_events` to match `RawEventDTO` / `RawEvent
   - `processed_at` (TIMESTAMPTZ, default NOW(), Indexed) - Timestamp of when the sentiment analysis was completed.
   - `model_version` (TEXT) - Version of the sentiment model used.
   - `sentiment_label` (TEXT) - The final determined sentiment (e.g., 'positive', 'negative', 'neutral').
+  - `sentiment_score` (FLOAT) - The primary sentiment score, typically the score of the winning label or a compound score.
   - `sentiment_confidence` (FLOAT) - Confidence score for the `sentiment_label`.
   - `sentiment_scores_json` (JSONB) - JSON object storing all class scores from the model (e.g., `{"positive": 0.8, "neutral": 0.15, "negative": 0.05}`).
   - `cleaned_text` (TEXT) - The preprocessed text that was analyzed.
@@ -273,50 +275,44 @@ This service expects each row in `raw_events` to match `RawEventDTO` / `RawEvent
 
 #### 3.2.2 `sentiment_metrics` Table
 
-- **Purpose**: Stores pre-aggregated sentiment metrics (event *count* and *avg_score*) over fixed time buckets for a given data source and sentiment label.
-- **Hypertable**: Yes, partitioned by **`time_bucket`** (start of the aggregation window).
+- **Purpose**: Stores aggregated sentiment metrics in a "tall" format. Each row represents a single metric (e.g., `event_count`, `confidence_sum`) for a specific aggregation group (time bucket, source, label, etc.). This design is flexible and allows for adding new metrics without schema changes.
+- **Hypertable**: Yes, partitioned by `metric_timestamp`.
 - **ORM Model**: `SentimentMetricORM`
-- **Primary Key / Unique Constraint**: `(time_bucket, source, source_id, label)` – exactly mirrors the ORM definition.
+- **Primary Key / Unique Constraint**: `(metric_timestamp, raw_event_source, raw_event_source_id, sentiment_label, model_version, metric_name)` – ensures each metric is unique for its aggregation group.
 - **Columns**
-  | Column | Type | Notes |
-  |--------|------|-------|
-  | `time_bucket` | TIMESTAMPTZ | Start of the bucket (e.g. `2025-06-25 15:00:00+00`). |
-  | `source` | TEXT | Origin of the data (`'reddit'`, `'twitter'`, …). |
-  | `source_id` | TEXT | Secondary identifier from the source (e.g. subreddit, `'unknown'`). |
-  | `label` | TEXT | Sentiment label (`positive`, `negative`, `neutral`, …). |
-  | `count` | INTEGER | Number of events in this bucket/label. |
-  | `avg_score` | FLOAT | Average `sentiment_score` for those events. |
+  | Column                | Type        | Notes                                                              |
+  |-----------------------|-------------|--------------------------------------------------------------------|
+  | `id`                  | UUID        | Primary Key.                                                       |
+  | `metric_timestamp`    | TIMESTAMPTZ | Start of the time bucket for the aggregation.                      |
+  | `raw_event_source`    | TEXT        | Origin of the data (`'reddit'`, `'twitter'`, …).                   |
+  | `raw_event_source_id` | TEXT        | Secondary identifier (e.g., subreddit, `'unknown'`).               |
+  | `sentiment_label`     | TEXT        | Sentiment label (`positive`, `negative`, `neutral`, …).            |
+  | `model_version`       | TEXT        | Version of the sentiment model used.                               |
+  | `metric_name`         | TEXT        | The name of the metric (e.g., `'event_count'`, `'confidence_sum'`). |
+  | `metric_value`        | FLOAT       | The value of the metric.                                           |
 
-- **Why this simpler schema?**
-  The pipeline currently only needs `count` and `avg_score`. A narrow table keeps inserts fast, avoids writing multiple rows per event, and makes analytical queries trivial. If additional metrics are required later we can add new columns via Alembic migrations or create a parallel "tall" metrics table.
+- **How it Works:**
+  When a new sentiment result is processed, the `ResultProcessor` executes `INSERT ... ON CONFLICT DO UPDATE` statements to update the relevant metrics. For example, for one event, it might:
+  1. Increment the `event_count` metric's value by 1.
+  2. Increment the `confidence_sum` metric's value by the event's confidence score.
+  3. Increment the `score_sum` metric's value by the event's sentiment score.
 
-- **Granularity of Buckets:**  
-  By default we write hourly buckets using `time_bucket('1h', occurred_at)`.  
-  To back-fill daily aggregates you can run:
-
+- **Querying:**
+  To get aggregated views (like the old "wide" format), queries must be constructed to pivot the data. For example, to get average confidence for a time bucket:
   ```sql
-  INSERT INTO sentiment_metrics (time_bucket, source, source_id, label, count, avg_score)
   SELECT
-    time_bucket('1d', occurred_at)   AS bucket,
-    source,
-    source_id,
-    sentiment_label,
-    COUNT(*) AS count,
-    AVG(sentiment_score) AS avg_score
-  FROM sentiment_results
-  WHERE occurred_at BETWEEN :start_date AND :end_date
-  GROUP BY bucket, source, source_id, sentiment_label
-  ON CONFLICT (time_bucket, source, source_id, label)
-  DO UPDATE SET
-    count = sentiment_metrics.count + EXCLUDED.count,
-    avg_score = (
-      (sentiment_metrics.avg_score * sentiment_metrics.count)
-      + (EXCLUDED.avg_score * EXCLUDED.count)
-    ) / (sentiment_metrics.count + EXCLUDED.count);
+    m_sum.metric_value / m_count.metric_value as avg_confidence
+  FROM sentiment_metrics m_sum
+  JOIN sentiment_metrics m_count
+    ON m_sum.metric_timestamp = m_count.metric_timestamp
+    AND m_sum.raw_event_source = m_count.raw_event_source
+    -- ... other join conditions
+  WHERE
+    m_sum.metric_name = 'confidence_sum'
+    AND m_count.metric_name = 'event_count'
+    -- ... other filters
   ```
-
-- **Handling New Labels:**  
-  If a sentiment model introduces a brand-new label (e.g. `'very_positive'`), the first `INSERT … ON CONFLICT …` automatically creates the row `(time_bucket, source, source_id, 'very_positive')`. Future events will then update that row.
+  The API layer handles this complexity to return a user-friendly format.
 
 
 #### 3.2.3 `dead_letter_events` Table

@@ -13,11 +13,38 @@ This document serves as a central index for all project documentation, organized
 | [pyproject.toml](./pyproject.toml) | Project configuration file for Poetry (dependencies, scripts, build system) |
 | [scraper_implementation_rule.md](./scraper_implementation_rule.md) | Implementation rules and guidelines for scrapers |
 | [timescaledb_integration_guide.md](./timescaledb_integration_guide.md) | Comprehensive guide for TimescaleDB integration |
+| [issues_note.md](./issues_note.md) | A collection of notes on issues encountered during development |
 
 ## Common
 
 ### Tests
 - [timescaledb_test_strategy.md](./common/tests/timescaledb_test_strategy.md) - Consolidated test plan for TimescaleDB integration, combining and optimizing test approaches from multiple sources.
+
+## Sentiment Docs
+
+### Project Overview & Planning
+
+*   **[prd.md](./sentiment_docs/prd.md)**: The Product Requirements Document, outlining the project's goals, features, and target outcomes.
+
+### Architecture & Design
+
+*   **[design.md](./sentiment_docs/design.md)**: The original, in-depth design document for the sentiment analysis service. Contains detailed component breakdowns and initial design considerations.
+*   **[event_lifecycle.md](./sentiment_docs/event_lifecycle.md)**: A detailed walkthrough of how a single event is processed through the entire pipeline, from ingestion to analysis.
+
+### Development
+
+*   **[TODO.md](./sentiment_docs/TODO.md)**: The original, detailed TODO list for the sentiment analysis service.
+*   **[todo_details.md](./sentiment_docs/todo_details.md)**: Detailed notes and plans related to the TODO items.
+
+### Deployment & Operations
+
+*   **[DEPLOYMENT.md](./sentiment_docs/DEPLOYMENT.md)**: Step-by-step instructions for deploying and managing the sentiment pipeline services.
+*   **[gpu_support.md](./sentiment_docs/gpu_support.md)**: A guide on enabling and configuring GPU support for the sentiment analysis model.
+
+### Guides & Examples
+
+*   **[API_EXAMPLES.md](./sentiment_docs/API_EXAMPLES.md)**: A comprehensive guide with examples on how to use the sentiment analysis API.
+*   **[POWERBI.md](./sentiment_docs/POWERBI.md)**: Detailed instructions on how to connect and integrate Power BI with the sentiment analysis API for real-time data visualization.
 
 ## Reddit Scraper
 

@@ -137,37 +137,37 @@ This document outlines the step-by-step tasks required to implement the Sentimen
 
 ## Phase 6: Testing
 
-- `[ ]` **6.1: Unit Tests (in `sentiment_analyzer/tests/unit/`):**
-  - `[ ]` Write unit tests for Preprocessor functions (mocking `spaCy` if needed, or testing with small inputs).
-  - `[ ]` Write unit tests for Sentiment Analyzer component (mocking model inference or using a tiny dummy model).
-  - `[ ]` Write unit tests for Data Fetcher logic (mocking DB interactions).
-  - `[ ]` Write unit tests for Result Processor logic (mocking DB interactions).
-  - `[ ]` Write unit tests for API endpoint logic (mocking service calls).
-  - `[ ]` Write unit tests for configuration loading and utility functions.
-- `[ ]` **6.2: Integration Tests (in `sentiment_analyzer/tests/integration/`):**
-  - `[ ]` Test the full pipeline flow: `raw_events` -> Data Fetcher -> ... -> `sentiment_results`/`sentiment_metrics` (requires a test TimescaleDB instance).
-  - `[ ]` Test API endpoints against a live (test) service and database.
-  - `[ ]` Test database interactions (CRUD operations for ORMs).
-  - `[ ]` Reference and reuse common test fixtures from `common/tests/timescaledb_test_strategy.md` where applicable.
-- `[ ]` **6.3: Test Coverage:**
-  - `[ ]` Aim for a high test coverage percentage.
+- `[x]` **6.1: Unit Tests (in `sentiment_analyzer/tests/unit/`):**
+  - `[x]` Write unit tests for Preprocessor functions (mocking `spaCy` if needed, or testing with small inputs).
+  - `[x]` Write unit tests for Sentiment Analyzer component (mocking model inference or using a tiny dummy model).
+  - `[x]` Write unit tests for Data Fetcher logic (mocking DB interactions).
+  - `[x]` Write unit tests for Result Processor logic (mocking DB interactions).
+  - `[x]` Write unit tests for API endpoint logic (mocking service calls).
+  - `[x]` Write unit tests for configuration loading and utility functions.
+- `[x]` **6.2: Integration Tests (in `sentiment_analyzer/tests/integration/`):**
+  - `[x]` Test the full pipeline flow: `raw_events` -> Data Fetcher -> ... -> `sentiment_results`/`sentiment_metrics` (requires a test TimescaleDB instance).
+  - `[x]` Test API endpoints against a live (test) service and database.
+  - `[x]` Test database interactions (CRUD operations for ORMs).
+  - `[x]` Reference and reuse common test fixtures from `common/tests/timescaledb_test_strategy.md` where applicable.
+- `[x]` **6.3: Test Coverage:**
+  - `[x]` Aim for a high test coverage percentage.
 
-## Phase 7: Documentation & Finalization
+## Phase 7: Documentation & Finalization ✅
 
-- `[ ]` **7.1: Update/Create `README.md` for Sentiment Service:**
-  - `[ ]` Add specific setup instructions for the sentiment service.
-  - `[ ]` Document API endpoints in detail.
-  - `[ ]` Explain configuration options.
-  - `[ ]` Provide instructions on how to run the service (batch processor, API server).
-- `[ ]` **7.2: Code Review & Refinement:**
-  - `[ ]` Perform a thorough code review.
-  - `[ ]` Ensure all code adheres to PEP8 and project styling guidelines.
-  - `[ ]` Add/improve comments and docstrings.
-- `[ ]` **7.3: Performance Profiling & Optimization (if needed):**
-  - `[ ]` Profile key components (preprocessor, sentiment model inference, DB writes) under load.
-  - `[ ]` Optimize bottlenecks if performance targets from `prd.md` are not met.
-- `[ ]` **7.4: Final Check against `prd.md` and `design.md`:**
-  - `[ ]` Ensure all requirements and design specifications have been met.
+- `[x]` **7.1: Update/Create `README.md` for Sentiment Service:**
+  - `[x]` Add specific setup instructions for the sentiment service.
+  - `[x]` Document API endpoints in detail.
+  - `[x]` Explain configuration options.
+  - `[x]` Provide instructions on how to run the service (batch processor, API server).
+- `[x]` **7.2: Code Review & Refinement:**
+  - `[x]` Perform a thorough code review.
+  - `[x]` Ensure all code adheres to PEP8 and project styling guidelines.
+  - `[x]` Add/improve comments and docstrings.
+- `[x]` **7.3: Performance Profiling & Optimization (if needed):**
+  - `[x]` Profile key components (preprocessor, sentiment model inference, DB writes) under load.
+  - `[x]` Optimize bottlenecks if performance targets from `prd.md` are not met.
+- `[x]` **7.4: Final Check against `prd.md` and `design.md`:**
+  - `[x]` Ensure all requirements and design specifications have been met.
 
 ## Discovered During Work (New Tasks)
 

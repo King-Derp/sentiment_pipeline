@@ -143,3 +143,5 @@ scraper_logs/
 /data
 
 /issues_note.md
+
+*.pbix

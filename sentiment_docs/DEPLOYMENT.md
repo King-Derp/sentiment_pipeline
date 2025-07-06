@@ -2,6 +2,9 @@
 
 This guide covers deploying the Sentiment Analysis Pipeline using Docker and Docker Compose.
 
+**Version:** 1.1  
+**Date:** 2025-07-06
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -23,6 +26,7 @@ This guide covers deploying the Sentiment Analysis Pipeline using Docker and Doc
    Edit `.env` file with your specific values:
    ```bash
    # Database credentials
+   PG_HOST=timescaledb
    PG_USER=your_db_user
    PG_PASSWORD=your_secure_password
    PG_DB=sentiment_pipeline_db
@@ -170,7 +174,7 @@ docker-compose exec sentiment_analyzer nvidia-smi
 
 ### Sentiment API Configuration
 
-- **Service:** `sentiment_analyzer_api`
+- **Service:** `sentiment_analyzer`
 - **Port:** 8001 (configurable via `SENTIMENT_API_PORT`)
 - **Health Check:** `/health` endpoint
 - **Resource Limits:** 4GB RAM, 2 CPU cores
@@ -183,6 +187,7 @@ docker-compose exec sentiment_analyzer nvidia-smi
 | `PG_USER` | Database username | - | ✅ |
 | `PG_PASSWORD` | Database password | - | ✅ |
 | `PG_DB` | Database name | `sentiment_pipeline_db` | ✅ |
+| `PG_HOST` | Database hostname | `timescaledb` | ✅ |
 | `SENTIMENT_API_PORT` | API port on host | `8001` | ❌ |
 | `DEBUG` | Enable debug mode | `false` | ❌ |
 | `WORKERS` | Uvicorn workers | `1` | ❌ |

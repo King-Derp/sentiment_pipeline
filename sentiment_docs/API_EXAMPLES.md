@@ -2,6 +2,9 @@
 
 This document provides comprehensive examples of how to use the Sentiment Analysis API endpoints.
 
+**Version:** 1.2  
+**Date:** 2025-07-06
+
 ## Base URL
 
 ```
@@ -61,6 +64,7 @@ curl -X POST "http://localhost:8001/api/v1/sentiment/analyze" \
 ### Response
 ```json
 {
+  "text": "I absolutely love this new product! It exceeded all my expectations.",
   "label": "positive",
   "confidence": 0.9234,
   "scores": {
@@ -109,38 +113,43 @@ curl -X POST "http://localhost:8001/api/v1/sentiment/analyze/bulk" \
 
 ### Response
 ```json
-[
-  {
-    "label": "positive",
-    "confidence": 0.8956,
-    "scores": {
-      "positive": 0.8956,
-      "negative": 0.0612,
-      "neutral": 0.0432
+{
+  "data": [
+    {
+      "text": "This is amazing! Best purchase ever.",
+      "label": "positive",
+      "confidence": 0.8956,
+      "scores": {
+        "positive": 0.8956,
+        "negative": 0.0612,
+        "neutral": 0.0432
+      },
+      "model_version": "ProsusAI/finbert-v1.1"
     },
-    "model_version": "ProsusAI/finbert-v1.1"
-  },
-  {
-    "label": "neutral",
-    "confidence": 0.7234,
-    "scores": {
-      "positive": 0.1823,
-      "negative": 0.0943,
-      "neutral": 0.7234
+    {
+      "text": "Not sure how I feel about this product.",
+      "label": "neutral",
+      "confidence": 0.7234,
+      "scores": {
+        "positive": 0.1823,
+        "negative": 0.0943,
+        "neutral": 0.7234
+      },
+      "model_version": "ProsusAI/finbert-v1.1"
     },
-    "model_version": "ProsusAI/finbert-v1.1"
-  },
-  {
-    "label": "negative",
-    "confidence": 0.8745,
-    "scores": {
-      "positive": 0.0456,
-      "negative": 0.8745,
-      "neutral": 0.0799
-    },
-    "model_version": "ProsusAI/finbert-v1.1"
-  }
-]
+    {
+      "text": "Completely disappointed with the quality.",
+      "label": "negative",
+      "confidence": 0.8745,
+      "scores": {
+        "positive": 0.0456,
+        "negative": 0.8745,
+        "neutral": 0.0799
+      },
+      "model_version": "ProsusAI/finbert-v1.1"
+    }
+  ]
+}
 ```
 
 ### JavaScript Example
@@ -200,34 +209,37 @@ curl -X GET "http://localhost:8001/api/v1/sentiment/events?cursor=eyJ0aW1lc3RhbX
 
 ### Response
 ```json
-[
-  {
-    "id": 1,
-    "event_id": "12345",
-    "occurred_at": "2025-06-29T12:00:00Z",
-    "processed_at": "2025-06-29T12:05:00Z",
-    "source": "reddit",
-    "source_id": "r/technology",
-    "sentiment_score": 0.85,
-    "sentiment_label": "positive",
-    "confidence": 0.92,
-    "model_version": "ProsusAI/finbert-v1.1",
-    "raw_text": "This new technology is revolutionary!"
-  },
-  {
-    "id": 2,
-    "event_id": "12346",
-    "occurred_at": "2025-06-29T12:15:00Z",
-    "processed_at": "2025-06-29T12:20:00Z",
-    "source": "twitter",
-    "source_id": "@user123",
-    "sentiment_score": -0.67,
-    "sentiment_label": "negative",
-    "confidence": 0.78,
-    "model_version": "ProsusAI/finbert-v1.1",
-    "raw_text": "Not impressed with the latest update."
-  }
-]
+{
+  "data": [
+    {
+      "id": 1,
+      "event_id": "12345",
+      "occurred_at": "2025-06-29T12:00:00Z",
+      "processed_at": "2025-06-29T12:05:00Z",
+      "source": "reddit",
+      "source_id": "r/technology",
+      "sentiment_score": 0.85,
+      "sentiment_label": "positive",
+      "confidence": 0.92,
+      "model_version": "ProsusAI/finbert-v1.1",
+      "raw_text": "This new technology is revolutionary!"
+    },
+    {
+      "id": 2,
+      "event_id": "12346",
+      "occurred_at": "2025-06-29T12:15:00Z",
+      "processed_at": "2025-06-29T12:20:00Z",
+      "source": "twitter",
+      "source_id": "@user123",
+      "sentiment_score": -0.67,
+      "sentiment_label": "negative",
+      "confidence": 0.78,
+      "model_version": "ProsusAI/finbert-v1.1",
+      "raw_text": "Not impressed with the latest update."
+    }
+  ],
+  "next_cursor": "eyJ0aW1lc3RhbXAiOiAiMjAyNS0wNi0yOVQxMjoxNTowMFoiLCAiaWQiOiAyfQ=="
+}
 ```
 
 ### Python Example with Filtering
@@ -271,28 +283,31 @@ curl -X GET "http://localhost:8001/api/v1/sentiment/metrics?source=reddit&metric
 
 ### Response
 ```json
-[
-  {
-    "id": 1,
-    "timestamp": "2025-06-29T12:00:00Z",
-    "source": "reddit",
-    "source_id": "r/technology",
-    "label": "positive",
-    "model_version": "ProsusAI/finbert-v1.1",
-    "metric_name": "event_count",
-    "metric_value": 45.0
-  },
-  {
-    "id": 2,
-    "timestamp": "2025-06-29T12:00:00Z",
-    "source": "reddit",
-    "source_id": "r/technology",
-    "label": "negative",
-    "model_version": "ProsusAI/finbert-v1.1",
-    "metric_name": "event_count",
-    "metric_value": 12.0
-  }
-]
+{
+  "data": [
+    {
+      "id": 1,
+      "timestamp": "2025-06-29T12:00:00Z",
+      "source": "reddit",
+      "source_id": "r/technology",
+      "label": "positive",
+      "model_version": "ProsusAI/finbert-v1.1",
+      "metric_name": "event_count",
+      "metric_value": 45.0
+    },
+    {
+      "id": 2,
+      "timestamp": "2025-06-29T12:00:00Z",
+      "source": "reddit",
+      "source_id": "r/technology",
+      "label": "negative",
+      "model_version": "ProsusAI/finbert-v1.1",
+      "metric_name": "event_count",
+      "metric_value": 12.0
+    }
+  ],
+  "next_cursor": "eyJ0aW1lc3RhbXAiOiAiMjAyNS0wNi0yOVQxMjowMDowMFoiLCAiaWQiOiAyfQ=="
+}
 ```
 
 ---
@@ -371,31 +386,29 @@ def stream_sentiment_events(source: str = None, limit: int = 100) -> Iterator[Di
     """Stream all sentiment events using cursor-based pagination."""
     url = "http://localhost:8001/api/v1/sentiment/events"
     cursor = None
-    
+
     while True:
         params = {"limit": limit}
         if cursor:
             params["cursor"] = cursor
         if source:
             params["source"] = source
-            
+
         response = requests.get(url, params=params)
         response.raise_for_status()
+
+        paginated_response = response.json()
+        events = paginated_response.get("data", [])
         
-        events = response.json()
         if not events:
             break
-            
+
         for event in events:
             yield event
-            
-        # Get cursor for next page (if available in response headers or last event)
-        if len(events) < limit:
+
+        cursor = paginated_response.get("next_cursor")
+        if not cursor:
             break
-        
-        # Create cursor from last event (simplified)
-        last_event = events[-1]
-        cursor = f"{last_event['processed_at']}_{last_event['id']}"
 
 # Usage
 for event in stream_sentiment_events(source="reddit"):

@@ -1,7 +1,7 @@
 # Lifecycle of a Raw Event in the Sentiment Analysis Service
 
-**Version:** 1.0  
-**Date:** 2025-06-09
+**Version:** 1.1  
+**Date:** 2025-07-06
 
 ## 1. Introduction
 
@@ -92,7 +92,7 @@ Let's assume our specific event is `event_X`.
     WHERE id = event_X.id AND processed = FALSE  -- Simplified, actual query fetches a batch
     RETURNING *;
     ```
-  - `event_X` (and others in the batch) has its `processing_status` changed from `'unprocessed'` to `'claimed'` and `claimed_at` is set.
+  - `event_X` (and others in the batch) has its `processed` flag set to `TRUE` and `processed_at` is populated.
 - **Output**: A list of `RawEventDTO` objects, including `event_X`, is returned to the `SentimentPipeline`.
 
 ### Step 2: Preprocessing
@@ -151,18 +151,20 @@ Let's assume our specific event is `event_X`.
 
   2.  **Update Aggregated Sentiment Metrics**:
       - (Assuming `save_sentiment_result` was successful).
-      - `ResultProcessor.update_sentiment_metrics(sentiment_result=saved_orm_object, raw_event_source=event_X.source)` is invoked.
+      - `ResultProcessor.update_sentiment_metrics(sentiment_result=saved_orm_object)` is invoked.
       - **Database Interaction**:
         - An async database session is acquired.
-        - For relevant metrics (e.g., `event_count` for the determined `sentiment_label` and `model_version`, `confidence_sum`):
-          - An `INSERT ... ON CONFLICT DO UPDATE` statement (via SQLAlchemy ORM) is executed for the `sentiment_metrics` table. This atomically increments the `metric_value` for the corresponding aggregation group (defined by `metric_timestamp`, `raw_event_source`, `sentiment_label`, `model_version`, `metric_name`).
-          - Example for `event_count`:
-            ```sql
-            INSERT INTO sentiment_metrics (metric_timestamp, raw_event_source, sentiment_label, model_version, metric_name, metric_value)
-            VALUES (:bucket, :source, :label, :model, 'event_count', 1)
-            ON CONFLICT (metric_timestamp, raw_event_source, sentiment_label, model_version, metric_name)
-            DO UPDATE SET metric_value = sentiment_metrics.metric_value + EXCLUDED.metric_value;
-            ```
+        - The `sentiment_metrics` table uses a "wide" schema to store aggregated counts and average scores directly.
+        - An `INSERT ... ON CONFLICT DO UPDATE` statement (via SQLAlchemy ORM) is executed for the `sentiment_metrics` table. This atomically updates the `count` and `avg_score` for the aggregation group defined by the primary key (`time_bucket`, `source`, `source_id`, `label`).
+        - **Conceptual SQL**:
+          ```sql
+          INSERT INTO sentiment_metrics (time_bucket, source, source_id, label, count, avg_score)
+          VALUES (:bucket, :source, :source_id, :label, 1, :new_score)
+          ON CONFLICT (time_bucket, source, source_id, label)
+          DO UPDATE SET
+            count = sentiment_metrics.count + 1,
+            avg_score = ((sentiment_metrics.avg_score * sentiment_metrics.count) + EXCLUDED.avg_score) / (sentiment_metrics.count + 1);
+          ```
         - **If update fails**: This is typically logged as a warning. The primary sentiment result is already saved, so this failure usually doesn't move `event_X` to the DLQ. The processing of `event_X` is still considered largely successful.
 
 ### Step 5: Post-Processing and Loop Continuation
@@ -170,26 +172,26 @@ Let's assume our specific event is `event_X`.
 - **Orchestrator**: `SentimentPipeline.process_single_event(event_X)` completes and returns `True` (for success/skip) or `False` (for DLQ).
 - `SentimentPipeline.run_pipeline_once()` collects results for all events in the batch and logs a summary (total fetched, successful, DLQ'd).
 - `SentimentPipeline.main_loop()` then sleeps for `settings.PIPELINE_RUN_INTERVAL_SECONDS` before initiating a new cycle to fetch another batch of events.
-- **Status of `event_X` in `raw_events` table**: After this cycle, `raw_events.processed` remains `TRUE`. The current pipeline implementation does not update it to `'processed'` or `'failed'` in the `raw_events` table itself. Future queries by the `DataFetcher` will ignore it because it's no longer `'unprocessed'`.
+- **Status of `event_X` in `raw_events` table**: After this cycle, `raw_events.processed` is `TRUE`. Future queries by the `DataFetcher` will ignore this event because it is no longer marked as unprocessed.
 
 ## 5. Possible Final States for `event_X`
 
 1.  **Successfully Processed and Stored**:
     - A new record exists in `sentiment_results` for `event_X`.
     - Relevant counters in `sentiment_metrics` are updated.
-    - `raw_events.processed` for `event_X` is `TRUE`.
-    - `raw_events.processing_status` for `event_X` is `'claimed'`.
+    - The `processed` flag for `event_X` in the `raw_events` table is `TRUE`.
 
 2.  **Skipped (e.g., Non-Target Language)**:
     - No new record in `sentiment_results` or `sentiment_metrics` related to `event_X`'s sentiment.
     - A log message indicates the skip reason.
-    - `raw_events.processing_status` for `event_X` is `'claimed'`.
+    - The `processed` flag for `event_X` is still `TRUE`, as it was claimed.
 
 3.  **Sent to Dead Letter Queue (DLQ)**:
-    - A new record exists in `dead_letter_events` detailing `event_X`, the failure reason, stage, and (if available) traceback.
+    - A new record exists in `dead_letter_events` detailing `event_X` and the failure reason.
     - No new record in `sentiment_results` or `sentiment_metrics` for `event_X`.
-    - `raw_events.processing_status` for `event_X` is `'claimed'`.
+    - The `processed` flag for `event_X` is still `TRUE`, as it was claimed.
+    
 
 ## 6. Conclusion
 
-The journey of a raw event through the Sentiment Analysis Service is a multi-stage process designed for robustness. Each component plays a specific role, from data acquisition and cleaning to analysis and storage. Error handling and logging are integrated at various points, with a dead-letter queue mechanism to capture events that cannot be processed, ensuring that the pipeline can continue operating smoothly while preserving problematic data for later review. The final status of the event in the `raw_events` table is `'claimed'`, effectively removing it from future processing batches by this service.
+The journey of a raw event through the Sentiment Analysis Service is a multi-stage process designed for robustness. Each component plays a specific role, from data acquisition and cleaning to analysis and storage. Error handling and logging are integrated at various points, with a dead-letter queue mechanism to capture events that cannot be processed, ensuring that the pipeline can continue operating smoothly while preserving problematic data for later review. The `processed` flag for the event in the `raw_events` table is set to `TRUE`, effectively removing it from future processing batches by this service.

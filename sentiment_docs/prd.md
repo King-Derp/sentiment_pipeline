@@ -31,7 +31,7 @@ This service is designed to be modular, configurable, and performant, leveraging
 ### 4.1 In Scope (MVP & Initial Iterations)
 
 - **IS1: Data Consumption:** Consume raw text events from the `raw_events` TimescaleDB table.
-- **IS2: Event Claiming:** Implement a mechanism to mark events in `raw_events` as processed by the sentiment service (e.g., using the `processed_sentiment` flag).
+- **IS2: Event Claiming:** Implement the mechanism that marks events as processed by updating `processed` to `TRUE` and `processed_at` to `NOW()` in the `raw_events` table.
 - **IS3: Advanced Text Preprocessing:** Employ `spaCy` for high-quality text cleaning, including lowercasing, removal of URLs/emojis/special characters, lemmatization, and stop-word removal.
 - **IS4: Language Detection:** Identify the language of the input text (initially focusing on processing English content).
 - **IS5: High-Accuracy Sentiment Analysis:** Utilize FinBERT as the primary model for sentiment analysis, leveraging GPU acceleration.
@@ -60,7 +60,7 @@ This service is designed to be modular, configurable, and performant, leveraging
 ### 5.1 Functional Requirements
 
 - **FR1: Data Ingestion:** The service MUST periodically fetch new, unprocessed events from the `raw_events` table in TimescaleDB based on a configurable batch size.
-- **FR2: Event Claiming:** The service MUST update a flag (e.g., `processed_sentiment`) in the `raw_events` table for fetched events to prevent reprocessing.
+- **FR2: Event Claiming:** The service MUST set the boolean `processed` column to `TRUE` and populate `processed_at` with the current timestamp in the `raw_events` table once each event has been processed, preventing duplicate work.
 - **FR3: Text Preprocessing:** The service MUST preprocess input text using `spaCy` with `en_core_web_lg` (or a similarly capable model) to perform: lowercasing, URL removal, emoji removal/conversion, lemmatization, and stop-word removal.
 - **FR4: Language Detection:** The service MUST detect the language of the input text. Initially, it will prioritize processing English text.
 - **FR5: Sentiment Analysis:** The service MUST generate a sentiment score (float), a sentiment label (e.g., "positive", "negative", "neutral"), and a confidence score (float) using a configurable model, defaulting to FinBERT.
