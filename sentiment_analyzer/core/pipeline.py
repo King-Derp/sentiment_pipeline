@@ -7,7 +7,7 @@ sentiment analysis, and result processing for batches of events.
 import asyncio
 import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from sqlalchemy.ext.asyncio import AsyncSession # Only for type hinting if passed around
 
@@ -17,6 +17,9 @@ from sentiment_analyzer.core.preprocessor import Preprocessor
 from sentiment_analyzer.core.sentiment_analyzer_component import SentimentAnalyzerComponent
 from sentiment_analyzer.core.result_processor import ResultProcessor
 from sentiment_analyzer.models.dtos import RawEventDTO
+from sentiment_analyzer.models.sentiment_result_orm import SentimentResultORM
+from sentiment_analyzer.models.dead_letter_event_orm import DeadLetterEventORM
+from sentiment_analyzer.utils.db_session import get_db_session_context_manager
 # get_async_db_session is used by ResultProcessor internally if no session is passed.
 
 logger = logging.getLogger(__name__)
@@ -38,21 +41,23 @@ class SentimentPipeline:
         self.batch_size = getattr(settings, "EVENT_FETCH_BATCH_SIZE", 100)
         logger.info("Sentiment Pipeline components initialized.")
 
-    async def process_single_event(self, raw_event: RawEventDTO) -> bool:
+    async def process_single_event(
+        self, raw_event: RawEventDTO
+    ) -> Union[SentimentResultORM, DeadLetterEventORM, None]:
         """
-        Processes a single raw event through the full analysis pipeline.
+        Processes a single raw event: analyzes sentiment and saves the result.
+        Manages its own database session to ensure transactional integrity per event.
 
         Args:
-            raw_event: The RawEventDTO to process.
+            raw_event: The raw event to process.
 
         Returns:
-            True if the event was successfully processed (including intentional skips),
-            False if a critical error occurred and it was moved to DLQ.
+            The ORM object for the saved result or dead-letter event, or None on failure.
         """
+        logger.info(
+            f"Starting processing for raw_event_id: {raw_event.id}, source: {raw_event.source}"
+        )
         try:
-            logger.info(f"Starting processing for raw_event_id: {raw_event.id}, source: {raw_event.source}")
-            logger.debug(f"Event {raw_event.id} received content: {raw_event.content}, type: {type(raw_event.content)}")
-
             # 1. Preprocess Text
             text_to_process = ""
             # First, try to get text from raw_event.content
@@ -89,13 +94,14 @@ class SentimentPipeline:
             # Validate extracted text
             if not text_to_process.strip():
                 logger.warning(f"Event {raw_event.id}: Extracted text content is empty or None after checking content and payload. Moving to DLQ.")
-                await self.result_processor.move_to_dead_letter_queue(
-                    raw_event=raw_event,
-                    error_message="Extracted text content is empty or None after checking content and payload.",
-                    failed_stage="preprocessing_input_validation"
-                )
-                return False
-            
+                async with get_db_session_context_manager() as session:
+                    return await self.result_processor.move_to_dead_letter_queue(
+                        raw_event=raw_event,
+                        error_message="Extracted text content is empty or None after checking content and payload.",
+                        failed_stage="preprocessing_input_validation",
+                        db_session=session,
+                    )
+
             logger.info(f"Event {raw_event.id}: Successfully extracted text for processing: '{text_to_process[:100]}...'" )
             preprocessed_data = self.preprocessor.preprocess(text_to_process)
 
@@ -124,74 +130,94 @@ class SentimentPipeline:
 
             # 3. Save Result and Update Metrics
             # ResultProcessor methods handle their own session management if None is passed.
-            saved_result_orm = await self.result_processor.save_sentiment_result(
-                raw_event=raw_event,
-                preprocessed_data=preprocessed_data,
-                sentiment_output=sentiment_output
-            )
-
-            if not saved_result_orm:
-                logger.error(f"Event {raw_event.id}: Failed to save sentiment result. Moving to DLQ.")
-                await self.result_processor.move_to_dead_letter_queue(
+            async with get_db_session_context_manager() as session:
+                saved_result_orm = await self.result_processor.save_sentiment_result(
                     raw_event=raw_event,
-                    error_message="Failed to save sentiment result to database.",
-                    failed_stage="result_saving"
+                    preprocessed_data=preprocessed_data,
+                    sentiment_output=sentiment_output,
+                    db_session=session
                 )
-                return False
 
-            metrics_updated = await self.result_processor.update_sentiment_metrics(
-                sentiment_result=saved_result_orm,
-                raw_event_source=raw_event.source
-            )
-            if not metrics_updated:
-                logger.warning(f"Event {raw_event.id}: Failed to update sentiment metrics for result_id {saved_result_orm.id}. This does not prevent event success.")
-            
-            logger.info(f"Successfully processed and saved sentiment for raw_event_id: {raw_event.id}")
-            return True
+                if not saved_result_orm:
+                    logger.error(f"Event {raw_event.id}: Failed to save sentiment result. Moving to DLQ.")
+                    # The save_sentiment_result already rolled back, so we just move to DLQ
+                    return await self.result_processor.move_to_dead_letter_queue(
+                        raw_event=raw_event,
+                        error_message="Failed to save sentiment result to database",
+                        failed_stage="save_sentiment_result",
+                        db_session=session, # Use the same session for the DLQ entry
+                    )
+
+                await self.result_processor.update_sentiment_metrics(
+                    sentiment_result=saved_result_orm,
+                    raw_event_source=raw_event.source,
+                    db_session=session,
+                )
+
+                await session.commit() # Commit the transaction for this single event
+                logger.info(f"Successfully processed and saved sentiment for raw_event_id: {raw_event.id}")
+                return saved_result_orm
 
         except Exception as e:
-            logger.error(f"Critical error processing raw_event_id {raw_event.id}: {e}", exc_info=True)
-            await self.result_processor.move_to_dead_letter_queue(
-                raw_event=raw_event,
-                error_message=f"Unhandled pipeline exception: {str(e)}",
-                failed_stage="pipeline_event_processing"
+            logger.critical(
+                f"Critical error processing raw_event_id {raw_event.id}: {e}", exc_info=True
             )
-            return False
+            # When a critical error occurs, move the event to the dead-letter queue
+            async with get_db_session_context_manager() as dlq_session:
+                return await self.result_processor.move_to_dead_letter_queue(
+                    raw_event=raw_event,
+                    error_message=str(e),
+                    failed_stage="process_single_event",
+                    db_session=dlq_session,
+                )
 
     async def run_pipeline_once(self) -> int:
         """
-        Runs one iteration of the sentiment analysis pipeline: fetches a batch
-        of events and processes them.
+        Runs one cycle of the sentiment analysis pipeline.
+        1. Fetches and claims a batch of raw events in a transaction.
+        2. Concurrently processes each event in its own transaction.
+        3. Logs the outcome of the batch processing.
 
         Returns:
-            int: The number of events fetched for processing. Returns 0 if no events were fetched.
+            The number of events successfully processed.
         """
-        logger.info(f"Starting pipeline run. Configured batch size: {self.batch_size}")
-        
-        # DataFetcher handles its own session for atomic fetch and claim.
-        fetched_events: List[RawEventDTO] = await fetch_and_claim_raw_events(
-        batch_size=self.batch_size, db_session=self._shared_session
-    )
+        events_attempted = 0
+        fetched_events: List[RawEventDTO] = []
+        results = []
 
-        if not fetched_events:
-            logger.info("No new events fetched to process in this iteration.")
+        # Step 1: Fetch and claim events in a single, short transaction.
+        try:
+            async with get_db_session_context_manager() as session:
+                fetched_events = await fetch_and_claim_raw_events(
+                    db_session=session, batch_size=self.batch_size
+                )
+                await session.commit()
+
+            if not fetched_events:
+                logger.info("No new events to process in this cycle.")
+                return 0
+
+            events_attempted = len(fetched_events)
+            logger.info(f"Fetched and claimed {events_attempted} events to process.")
+
+            # Step 2: Process each event concurrently, each in its own transaction.
+            tasks = [self.process_single_event(event) for event in fetched_events]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        except Exception as e:
+            logger.critical(f"An unexpected error occurred in the pipeline fetch stage: {e}", exc_info=True)
+            # If fetching fails, we can't do much else, so we return.
             return 0
-        
-        event_count = len(fetched_events)
-        logger.info(f"Fetched {event_count} events for processing.")
 
-        # Process events concurrently
-        # Each call to process_single_event is independent in terms of its DB transactions for saving results/DLQ.
-        tasks = [self.process_single_event(event) for event in fetched_events]
-        results = await asyncio.gather(*tasks, return_exceptions=False) # exceptions in tasks will stop gather if not handled in task
+        # Step 3: Log the results of the processing batch.
+        successful_count = sum(1 for r in results if r and not isinstance(r, (Exception, BaseException)))
+        failed_count = events_attempted - successful_count
 
-        successful_processing_count = sum(1 for res in results if res is True)
-        failed_dlq_count = event_count - successful_processing_count
-        
-        logger.info(f"Pipeline run finished for batch of {event_count} events. "
-                    f"Successfully processed (or skipped appropriately): {successful_processing_count}. "
-                    f"Failed and moved to DLQ: {failed_dlq_count}.")
-        return event_count
+        logger.info(
+            f"Pipeline run finished. Processed: {successful_count}, Failed: {failed_count}"
+        )
+
+        return successful_count
 
 async def main_loop():
     """

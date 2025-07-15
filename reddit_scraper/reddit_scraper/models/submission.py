@@ -2,15 +2,15 @@
 
 from typing import TypedDict, Optional, Dict, Any
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, BigInteger, Text, func, Index, PrimaryKeyConstraint, Identity, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import JSON
+from sqlalchemy.orm import Mapped, mapped_column
+from reddit_scraper.storage.database import Base
 from sqlalchemy.sql import expression
 from sqlalchemy.sql.sqltypes import TIMESTAMP
 from datetime import datetime
 
 
-class Base(DeclarativeBase):
-    pass
+
 
 
 class RawEventORM(Base):
@@ -35,7 +35,7 @@ class RawEventORM(Base):
     source: Mapped[str] = mapped_column(Text, nullable=False, comment="Source system of the event (e.g., 'reddit', 'twitter')")
     source_id: Mapped[str] = mapped_column(Text, nullable=False, comment="Unique identifier of the event within the source system") # Removed unique=True
     occurred_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True, nullable=False, comment="Timestamp when the event originally occurred, part of composite PK")
-    payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="Full event payload as JSON")
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, comment="Full event payload as JSON")
     ingested_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), comment="Timestamp when the event was ingested into the system")
 
     # Fields for sentiment analysis processing state

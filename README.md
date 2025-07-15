@@ -138,6 +138,37 @@ docker-compose up -d --build
 - **View logs:** `docker-compose logs -f sentiment_analyzer`
 - **Access the API docs (if not in production):** `http://localhost:8001/docs`
 
+## Usage
+
+The primary entrypoint for data collection is the `reddit_scraper` CLI.
+
+### Running the Scraper
+
+You can run the scraper in two modes:
+
+1.  **Daemon Mode**: Continuously monitors subreddits for new submissions.
+2.  **Backfill Mode**: Fetches historical data for a specified date range.
+
+The `--sink` option controls where the data is saved:
+
+*   `--sink csv`: Saves data to a CSV file (default).
+*   `--sink postgres`: Saves data directly to the TimescaleDB database.
+*   `--sink composite`: Saves to both CSV and TimescaleDB.
+
+**Example 1: Run a backfill to TimescaleDB**
+
+```bash
+# Run this command inside the reddit_scraper service container
+docker-compose exec reddit_scraper poetry run python -m reddit_scraper.cli scrape --since-date "2023-01-01" --sink postgres
+```
+
+**Example 2: Run the scraper as a daemon, saving to both sinks**
+
+```bash
+# Run this command inside the reddit_scraper service container
+docker-compose exec reddit_scraper poetry run python -m reddit_scraper.cli scrape --daemon --sink composite
+```
+
 ## Project Documentation
 
 All project documentation is indexed in **[`DOCUMENTATION.md`](DOCUMENTATION.md)**. This is the best place to start to find information about the project's architecture, design, deployment, and usage.

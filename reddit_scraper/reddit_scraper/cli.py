@@ -149,6 +149,7 @@ async def run_scraper(
     daemon: bool = False,
     reset_backfill: bool = False,
     since_date: Optional[str] = None,
+    sink_type: str = "composite",
     verbose: bool = False,
 ) -> None:
     """
@@ -159,6 +160,7 @@ async def run_scraper(
         daemon: Whether to run in daemon mode (continuous maintenance)
         reset_backfill: Whether to reset the backfill (ignore existing IDs)
         since_date: Date to start backfill from (YYYY-MM-DD)
+        sink_type: Data sink to use (csv, postgres, or composite)
         verbose: Whether to enable verbose logging
     """
     global _maintenance_runner, _shutdown_event
@@ -176,40 +178,42 @@ async def run_scraper(
         logger.critical("Invalid configuration, aborting")
         sys.exit(1)
     
-    # Create components
-    # Use CompositeSink to enable both CSV and PostgreSQL storage
-    sinks = [CsvSink(config.csv_path)] # Always include CSVSink
-    
-    if config.postgres and config.postgres.enabled:
-        if config.postgres.use_sqlalchemy:
-            logger.info("Attempting to initialize database for SQLAlchemy sink...")
-            # Call init_db from reddit_scraper.storage.database
+    # Create data sink based on user's choice
+    if sink_type == "csv":
+        data_sink = CsvSink(config.csv_path)
+        logger.info("Using CSV sink for data storage.")
+    elif sink_type == "postgres":
+        if config.postgres and config.postgres.enabled and config.postgres.use_sqlalchemy:
             if initialize_database_session(config.postgres):
                 try:
-                    logger.info("Using SQLAlchemy PostgreSQL sink.")
+                    data_sink = SQLAlchemyPostgresSink(config.postgres)
+                    logger.info("Using SQLAlchemy PostgreSQL sink for data storage.")
+                except Exception as e:
+                    logger.critical(f"Failed to initialize SQLAlchemyPostgresSink: {e}. Aborting.")
+                    sys.exit(1)
+            else:
+                logger.critical("Database initialization failed. PostgreSQL sink cannot be used. Aborting.")
+                sys.exit(1)
+        else:
+            logger.critical("PostgreSQL sink is not configured or enabled for SQLAlchemy. Aborting.")
+            sys.exit(1)
+    elif sink_type == "composite":
+        sinks = [CsvSink(config.csv_path)]
+        if config.postgres and config.postgres.enabled and config.postgres.use_sqlalchemy:
+            if initialize_database_session(config.postgres):
+                try:
                     pg_sink = SQLAlchemyPostgresSink(config.postgres)
                     sinks.append(pg_sink)
-                    logger.info("SQLAlchemy PostgreSQL sink enabled and initialized.")
                 except Exception as e:
-                    logger.error(f"Failed to initialize SQLAlchemyPostgresSink (even after DB init_db call): {e}. Proceeding with CSV sink only.")
+                    logger.error(f"Failed to initialize SQLAlchemyPostgresSink: {e}. Proceeding with CSV sink only.")
             else:
-                logger.error("Database initialization (init_db) failed. SQLAlchemy PostgreSQL sink will not be used.")
-        else: # Direct connection PostgreSQL sink
-            try:
-                logger.info("Using direct connection PostgreSQL sink.")
-                pg_sink = PostgresSink(config.postgres) # Assuming this sink handles its own connections
-                sinks.append(pg_sink)
-                logger.info("Direct PostgreSQL sink enabled and initialized.")
-            except Exception as e:
-                logger.error(f"Failed to initialize direct PostgresSink: {e}. Proceeding with CSV sink only.")
+                logger.error("Database initialization failed. SQLAlchemy PostgreSQL sink will not be used.")
+        data_sink = CompositeSink(sinks)
+        active_sinks_names = [type(s).__name__ for s in data_sink.sinks]
+        logger.info(f"Using composite sink. Data will be written to: {', '.join(active_sinks_names)}")
     else:
-        logger.info("PostgreSQL sink is not enabled in the configuration.")
-        
-    data_sink = CompositeSink(sinks)
-    # logger.info(f"Using {'PostgreSQL and ' if use_postgres else ''}CSV storage") # Old logging
-    
-    active_sinks_names = [type(s).__name__ for s in data_sink.sinks]
-    logger.info(f"Data will be written to: {', '.join(active_sinks_names)}")
+        logger.critical(f"Invalid sink type '{sink_type}'. Use 'csv', 'postgres', or 'composite'. Aborting.")
+        sys.exit(1)
 
     reddit_client = RedditClient(config)
     rate_limiter = RateLimiter(config.rate_limit)
@@ -316,6 +320,7 @@ def scrape(
     daemon: Annotated[bool, typer.Option("--daemon", "-d", help="Run in daemon mode (continuous maintenance)")] = False,
     reset_backfill: Annotated[bool, typer.Option("--reset-backfill", "-r", help="Reset backfill (ignore existing IDs)")] = False,
     since: Annotated[Optional[str], typer.Option("--since", "-s", help="Date to start backfill from (YYYY-MM-DD)")] = None,
+    sink: Annotated[str, typer.Option("--sink", help="Data sink to use (csv, postgres, or composite)")] = "composite",
     loglevel: Annotated[str, typer.Option("--loglevel", "-l", help="Logging level")] = "INFO",
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose output")] = False,
 ) -> None:
@@ -342,6 +347,7 @@ def scrape(
             daemon=daemon,
             reset_backfill=reset_backfill,
             since_date=since,
+            sink_type=sink,
             verbose=verbose,
         ))
     except KeyboardInterrupt:

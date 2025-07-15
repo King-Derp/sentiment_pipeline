@@ -46,13 +46,14 @@ This document outlines the major tasks for the sentiment analysis pipeline proje
 
 ## 🎯 Current Task
 
--   **[ ] Final Documentation Review and Cleanup**
+-   **[x] Final Documentation Review and Cleanup**
     -   **Goal:** Ensure all project documentation is accurate, consistent, and up-to-date with the final state of the codebase.
     -   **Tasks:**
         -   [x] Update `ARCHITECTURE.md` with the correct, detailed database schemas and system design.
         -   [x] Restore the comprehensive index in `DOCUMENTATION.md`.
         -   [x] Restore the detailed task history in `TASK.md`.
-        -   [ ] Review and align all other documents (`README.md`, `sentiment_docs/*`, etc.) for consistency.
+        -   [x] Update `README.md` and `upgrade_to_timescaledb.md` to document the `--sink` CLI option.
+        -   [x] Review and align all other documents (`README.md`, `sentiment_docs/*`, etc.) for consistency.
 
 ---
 

@@ -9,7 +9,7 @@ import os
 import logging
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, func, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 
@@ -24,25 +24,7 @@ SessionLocal = None
 # Create base class for declarative models
 Base = declarative_base()
 
-# Define models matching the existing schema
-class RawEvent(Base):
-    """
-    SQLAlchemy model for the raw_submissions table in the market_postgres database.
-    
-    This model matches the existing table structure with non-partitioned tables.
-    """
-    __tablename__ = "raw_submissions"
-    
-    id = Column(Integer, primary_key=True)
-    source = Column(String, nullable=False)
-    source_id = Column(String, nullable=False)
-    occurred_at = Column(DateTime(timezone=True), nullable=False)
-    payload = Column(JSONB, nullable=False)
-    ingested_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    processed = Column(Boolean, nullable=False, default=False)
-    
-    def __repr__(self):
-        return f"<RawEvent(id={self.id}, source='{self.source}', source_id='{self.source_id}')>"
+
 
 class SentimentScore(Base):
     """

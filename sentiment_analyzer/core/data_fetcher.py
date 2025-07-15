@@ -105,10 +105,7 @@ async def fetch_and_claim_raw_events(
 
         events_to_update_cte = (
             select(RawEventORM)
-            .where(and_(
-                or_(RawEventORM.processed.is_(False), RawEventORM.processed.is_(None)),
-                getattr(RawEventORM, 'sentiment_processed_at' if hasattr(RawEventORM, 'sentiment_processed_at') else 'processed_at').is_(None)
-            ))
+            .where(or_(RawEventORM.processed.is_(False), RawEventORM.processed.is_(None)))
             .order_by(RawEventORM.occurred_at.asc())
             .limit(batch_size)
             .with_for_update(skip_locked=True)

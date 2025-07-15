@@ -15,11 +15,10 @@ This tool collects Reddit submissions and comments from configured finance-relat
 *   **Efficient Data Handling:** Uses `asyncpraw` for asynchronous API calls.
 *   **Standardized Data Output:** Produces `RawEventDTO` objects for ingestion, as detailed in `ARCHITECTURE.md`.
 *   **Adherence to Project Rules:** Follows guidelines from `scraper_implementation_rule.md` and `ARCHITECTURE.md` regarding database interaction, logging, and error handling.
-*   **Primary Sink:** Uses `SQLAlchemyPostgresSink` with the `RawEventORM` model for type-safe, batched database operations into the `raw_events` table. This is the standard and recommended approach.
-*   **Flexible Storage Sinks:** Supports two PostgreSQL sink implementations for writing to the `raw_events` table:
-    *   `SQLAlchemyPostgresSink` (default and recommended): Uses SQLAlchemy ORM for robust, type-safe, and batched database operations. Aligns with the `RawEventORM` model.
-    *   `PostgresSink` (legacy): Uses direct `psycopg2` connections. This option is available for specific use cases or backward compatibility but is not recommended for new deployments due to its direct SQL management and lack of ORM benefits.
-    *   The choice of sink is controlled by the `postgres.use_sqlalchemy` flag in `config.yaml` (see Configuration section).
+*   **Flexible Storage Sinks:** Persists data using configurable output sinks. The storage strategy is controlled via the `--sink` command-line option.
+    *   **PostgreSQL Sink (`--sink postgres`):** The primary and recommended sink. It uses `SQLAlchemyPostgresSink` to write data in batches to the `raw_events` hypertable in TimescaleDB. This sink is robust, type-safe, and handles database conflicts gracefully.
+    *   **CSV Sink (`--sink csv`):** A simple sink that appends data to a local CSV file. Useful for backups, local analysis, or development.
+    *   **Composite Sink (`--sink composite`):** A powerful option that writes data to *both* the PostgreSQL and CSV sinks simultaneously, providing data redundancy.
 
 ## Target Subreddits (Default)
 
@@ -88,45 +87,40 @@ To use this scraper, you need to create a Reddit application:
 
 ### Command Line Interface
 
-The primary way to run the scraper is via its command-line interface. The scraper can perform an initial backfill and then run in a continuous daemon mode.
+The primary way to run the scraper is via its command-line interface, which supports two main operational modes: backfill and daemon. The data destination is controlled by the `--sink` option.
 
-**Example: Initial Backfill & Continuous Daemon Mode**
+**CLI Examples**
 
-This is the typical command for continuous operation:
+1.  **Run a historical backfill and save to TimescaleDB:**
+    This command fetches data from a specific date to the present and stores it directly in the database.
 
-```bash
-poetry run python -m reddit_scraper.cli scrape --config config.yaml --daemon --loglevel INFO
-# Or using the script shortcut (if configured in pyproject.toml):
-# poetry run scrape --daemon --loglevel INFO
-```
+    ```bash
+    poetry run python -m reddit_scraper.cli scrape --since-date "2023-01-01" --sink postgres
+    ```
 
-This command will:
-1.  Load configuration from `config.yaml` and `.env`.
-2.  Connect to the Reddit API and the TimescaleDB database.
-3.  Perform an initial backfill for configured subreddits (e.g., last 30 days, or as specified by `--since`).
-4.  After backfill, enter daemon mode, periodically checking for new submissions and comments.
-5.  Store data as `RawEventDTO` objects into the `raw_events` table in TimescaleDB and optionally to CSV files (as per `scraper_implementation_rule.md`).
+2.  **Run in continuous daemon mode, saving to both database and CSV:**
+    This is the recommended command for continuous, resilient operation. It monitors for new submissions and saves them to both sinks.
 
-**Example: One-off Historical Backfill**
+    ```bash
+    poetry run python -m reddit_scraper.cli scrape --daemon --sink composite
+    ```
 
-To run a one-off historical backfill for a specific period without entering daemon mode:
+3.  **Run a backfill saving only to a CSV file (the default sink):**
+    Useful for quick local data dumps without database interaction.
 
-```bash
-poetry run python -m reddit_scraper.cli scrape --config config.yaml --since YYYY-MM-DD --until YYYY-MM-DD --loglevel INFO
-# Example: --since 2024-01-01 --until 2024-01-31
-```
-
-**Note on Deprecated Scrapers:** Previous versions of this README mentioned specialized historical scrapers (DeepHistoricalScraper, HybridHistoricalScraper, PushshiftHistoricalScraper). These are **DEPRECATED**. All scraping logic is now consolidated into the main `scrape` command, using options like `--since` and `--until` for historical data collection.
+    ```bash
+    poetry run python -m reddit_scraper.cli scrape --since-date "2023-01-01"
+    # Note: --sink csv is the default and can be omitted.
+    ```
 
 #### Scraper CLI Options (`scrape` command)
 
-- `--config CONFIG_PATH`: Path to configuration file (default: `config.yaml`).
-- `--loglevel LOGLEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL. Default: INFO).
-- `--daemon`: Run in daemon mode for continuous monitoring after initial backfill.
-- `--since SINCE_DATE`: Optional. Start date for historical backfill (YYYY-MM-DD). If not provided, defaults to a period defined in `config.yaml` or a standard lookback (e.g., 30 days).
-- `--until UNTIL_DATE`: Optional. End date for historical backfill (YYYY-MM-DD). Defaults to now if not specified.
-- `--subreddits SUBREDDITS`: Optional. Comma-separated list of subreddits to scrape, overrides `config.yaml`.
-
+- `--sink TEXT`: The data sink to use. Options: `postgres`, `csv`, `composite`. **Default: `csv`**.
+- `--daemon`: If set, runs the scraper in continuous daemon mode to fetch new posts.
+- `--since-date TEXT`: The start date (YYYY-MM-DD) for a historical backfill. If not provided, the scraper runs in daemon mode unless `--daemon` is explicitly set.
+- `--reset-backfill`: If set, ignores previously scraped submission IDs and re-fetches all data within the time window. Use with caution.
+- `--config CONFIG_PATH`: Path to the configuration file. Default: `config.yaml`.
+- `--loglevel LOGLEVEL`: Logging level (e.g., `INFO`, `DEBUG`). Default: `INFO`.
 ### Docker Deployment
 
 The project includes a `Dockerfile` and can be orchestrated using the main project `docker-compose.yml`.
@@ -152,7 +146,7 @@ services:
       - ./reddit_scraper/config.yaml:/app/config.yaml
       - ./data:/app/data # For CSV output
       - ./logs:/app/logs # For log files
-    command: ["python", "-m", "reddit_scraper.cli", "scrape", "--config", "config.yaml", "--daemon", "--loglevel", "INFO"]
+    command: ["python", "-m", "reddit_scraper.cli", "scrape", "--daemon", "--sink", "composite", "--loglevel", "INFO"]
     depends_on:
       timescaledb_service: # Or your TimescaleDB service name
         condition: service_healthy
@@ -181,8 +175,7 @@ The `config.yaml` file contains the following settings:
   - `alerts`: Alert thresholds
     - `max_fetch_age_sec`: Maximum age of latest fetch in seconds
     - `max_disk_usage_percent`: Maximum disk usage percentage for CSV
-- `postgres`:
-  - `use_sqlalchemy` (boolean): Defaults to `true`. If `true`, uses the `SQLAlchemyPostgresSink`. If `false`, uses the legacy `PostgresSink` (direct `psycopg2`).
+
 
 ## Monitoring
 

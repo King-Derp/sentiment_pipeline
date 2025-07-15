@@ -11,7 +11,7 @@ from typing import Set, Dict, Optional, Tuple
 from reddit_scraper.collector.collector import SubmissionCollector
 from reddit_scraper.collector.backfill import BackfillRunner
 from reddit_scraper.config import Config
-from reddit_scraper.storage.csv_sink import DataSink
+from reddit_scraper.storage.csv_sink import CsvSink as DataSink
 
 logger = logging.getLogger(__name__)
 

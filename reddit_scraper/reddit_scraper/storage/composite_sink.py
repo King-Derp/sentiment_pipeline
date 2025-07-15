@@ -5,7 +5,8 @@ import os
 from typing import List, Set, Optional
 
 from reddit_scraper.models.submission import SubmissionRecord
-from reddit_scraper.storage.csv_sink import CsvSink, DataSink
+from reddit_scraper.storage.data_sink import DataSink
+from reddit_scraper.storage.csv_sink import CsvSink
 from reddit_scraper.storage.sqlalchemy_postgres_sink import SQLAlchemyPostgresSink as PostgresSink
 from reddit_scraper.storage.postgres_sink import PostgresSink as LegacyPostgresSink
 

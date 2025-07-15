@@ -50,7 +50,8 @@ class ResultProcessor:
         self,
         raw_event: RawEventDTO,
         preprocessed_data: PreprocessedText,
-        sentiment_output: SentimentAnalysisOutput
+        sentiment_output: SentimentAnalysisOutput,
+        db_session: Optional[AsyncSession] = None,
     ) -> Optional[SentimentResultORM]:
         """
         Saves a single sentiment analysis result to the database.
@@ -64,7 +65,10 @@ class ResultProcessor:
         Returns:
             The saved SentimentResultORM object if successful, else None.
         """
-        session_manager = get_async_db_session(existing_session=self._shared_session)
+        # Use the provided session or create a new one
+        session_manager = get_async_db_session(
+            existing_session=db_session or self._shared_session
+        )
         async with session_manager as session:
             try:
                 new_result_orm = SentimentResultORM(
@@ -82,7 +86,16 @@ class ResultProcessor:
                     processed_at=datetime.now(timezone.utc)
                 )
                 session.add(new_result_orm)
-                await session.commit()
+
+                # If we are managing the session externally, don't commit here.
+                # The calling function (pipeline) will handle the commit.
+                if not db_session:
+                    await session.commit()
+                else:
+                    # We need to flush to get the DB-assigned values like the ID
+                    # without committing the transaction.
+                    await session.flush()
+
                 await session.refresh(new_result_orm)
                 logger.info(f"Saved sentiment result for raw_event_id: {raw_event.id}")
                 
@@ -133,6 +146,7 @@ class ResultProcessor:
         self,
         sentiment_result: SentimentResultORM,
         raw_event_source: str, # Source from the original RawEventDTO
+        db_session: Optional[AsyncSession] = None,
     ) -> bool:
         """
         Updates aggregated sentiment metrics based on a new sentiment result.
@@ -146,7 +160,9 @@ class ResultProcessor:
         Returns:
             True if metrics were updated successfully, False otherwise.
         """
-        session_manager = get_async_db_session(existing_session=self._shared_session)
+        session_manager = get_async_db_session(
+            existing_session=db_session or self._shared_session
+        )
         async with session_manager as session:
             try:
                 metric_ts = sentiment_result.processed_at.replace(minute=0, second=0, microsecond=0)
@@ -187,7 +203,8 @@ class ResultProcessor:
                             avg_score=sentiment_result.sentiment_score,
                         )
                     )
-                await session.commit()
+                if not db_session:
+                    await session.commit()
                 logger.info(f"Updated sentiment metrics for result_id: {sentiment_result.id}, source: {raw_event_source}")
                 return True
             except SQLAlchemyError as e:
@@ -209,7 +226,8 @@ class ResultProcessor:
         self,
         raw_event: RawEventDTO,
         error_message: str,
-        failed_stage: str
+        failed_stage: str,
+        db_session: Optional[AsyncSession] = None,
     ) -> Optional[DeadLetterEventORM]:
         """
         Moves a failed event's details to the dead-letter queue.
@@ -223,7 +241,9 @@ class ResultProcessor:
         Returns:
             The saved DeadLetterEventORM object if successful, else None.
         """
-        session_manager = get_async_db_session(existing_session=self._shared_session)
+        session_manager = get_async_db_session(
+            existing_session=db_session or self._shared_session
+        )
         async with session_manager as session:
             try:
                 content_json: Dict = raw_event.model_dump(mode="json") if raw_event else {}
@@ -239,9 +259,18 @@ class ResultProcessor:
                     failed_at=datetime.now(timezone.utc),
                 )
                 session.add(new_dle_orm)
-                await session.commit()
+
+                if not db_session:
+                    await session.commit()
+                else:
+                    # We need to flush to get the DB-assigned values like the ID
+                    # without committing the transaction.
+                    await session.flush()
+
                 await session.refresh(new_dle_orm)
-                logger.info(f"Moved event (raw_event_id: {raw_event.id if raw_event else 'N/A'}) to dead-letter queue. Stage: {failed_stage}")
+                logger.info(
+                    f"Moved event (raw_event_id: {raw_event.id if raw_event else 'N/A'}) to dead-letter queue. Stage: {failed_stage}"
+                )
                 return new_dle_orm
             except SQLAlchemyError as e:
                 logger.error(

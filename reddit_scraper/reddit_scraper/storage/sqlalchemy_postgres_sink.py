@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Set, Optional, Dict, Any, Generator
 
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy import text
 
 from reddit_scraper.models.submission import SubmissionRecord, RawEventORM
@@ -154,9 +154,19 @@ class SQLAlchemyPostgresSink:
 
                         # Upsert statement for RawEventORM
                         # Conflict on (source, source_id, occurred_at)
-                        stmt = insert(RawEventORM).values(values_to_insert)
+                        if db.bind.dialect.name == 'sqlite':
+                            # HACK: This is a workaround for testing with SQLite, which does not support
+                            # autoincrement on composite primary keys. We manually assign an ID.
+                            # In production (PostgreSQL), the 'id' column is an IDENTITY column and
+                            # is generated automatically.
+                            for i, record in enumerate(values_to_insert, 1):
+                                record['id'] = i
+                            stmt = sqlite.insert(RawEventORM).values(values_to_insert)
+                        else:
+                            stmt = postgresql.insert(RawEventORM).values(values_to_insert)
+
                         stmt = stmt.on_conflict_do_nothing(
-                            index_elements=['source', 'source_id', 'occurred_at'] # Updated conflict target
+                            index_elements=["source", "source_id", "occurred_at"]
                         )
                         db.execute(stmt)
                         db.commit()

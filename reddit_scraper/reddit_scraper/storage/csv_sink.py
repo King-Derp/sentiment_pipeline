@@ -4,7 +4,9 @@ import csv
 import logging
 import os
 from pathlib import Path
-from typing import List, Set, Protocol, Optional
+from typing import List, Set, Optional
+
+from reddit_scraper.storage.data_sink import DataSink
 
 import pandas as pd
 
@@ -13,32 +15,10 @@ from reddit_scraper.models.submission import SubmissionRecord
 logger = logging.getLogger(__name__)
 
 
-class DataSink(Protocol):
-    """Protocol defining the interface for data storage implementations."""
-    
-    def append(self, records: List[SubmissionRecord]) -> int:
-        """
-        Append records to the storage.
-        
-        Args:
-            records: List of submission records to append
-            
-        Returns:
-            Number of records successfully appended
-        """
-        ...
-    
-    def load_ids(self) -> Set[str]:
-        """
-        Load existing submission IDs from storage.
-        
-        Returns:
-            Set of submission IDs already in storage
-        """
-        ...
 
 
-class CsvSink:
+
+class CsvSink(DataSink):
     """CSV file implementation of the DataSink interface."""
     
     # Column order matching the PRD specification
@@ -144,7 +124,7 @@ class CsvSink:
             return set()
 
 
-class ParquetSink:
+class ParquetSink(DataSink):
     """
     Placeholder for future Parquet storage implementation.
     

@@ -12,7 +12,7 @@ import tqdm.asyncio
 from reddit_scraper.collector.collector import SubmissionCollector
 from reddit_scraper.config import Config
 from reddit_scraper.models.submission import SubmissionRecord
-from reddit_scraper.storage.csv_sink import DataSink
+from reddit_scraper.storage.base_sink import BaseSink
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class BackfillRunner:
         self,
         config: Config,
         collector: SubmissionCollector,
-        data_sink: DataSink,
+        data_sink: BaseSink,
     ):
         """
         Initialize the backfill runner.
