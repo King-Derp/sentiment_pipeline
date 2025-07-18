@@ -80,8 +80,22 @@ class CsvSink(DataSink):
                 # Remove any duplicates based on ID
                 df = df.drop_duplicates(subset=["id"], keep="first")
             
-            # Sort by created_utc timestamp (chronological order)
-            df = df.sort_values(by="created_utc", ascending=True)
+            # Normalize created_utc column to handle mixed data types (float timestamps vs datetime strings)
+            # Convert all created_utc values to pandas datetime for consistent sorting
+            try:
+                # First, try to convert to datetime, handling both Unix timestamps and datetime strings
+                df['created_utc'] = pd.to_datetime(df['created_utc'], errors='coerce', unit='s')
+                # If that fails for string datetimes, try parsing as datetime strings
+                mask = df['created_utc'].isna()
+                if mask.any():
+                    df.loc[mask, 'created_utc'] = pd.to_datetime(df.loc[mask, 'created_utc'], errors='coerce')
+            except Exception as e:
+                logger.warning(f"Could not normalize created_utc column: {e}. Skipping sort.")
+                # If normalization fails, don't sort to avoid the comparison error
+                df = df.copy()
+            else:
+                # Sort by created_utc timestamp (chronological order) only if normalization succeeded
+                df = df.sort_values(by="created_utc", ascending=True)
             
             # Write to CSV (overwrite mode since we're rewriting the entire file)
             df.to_csv(
