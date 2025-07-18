@@ -38,6 +38,7 @@ from reddit_scraper.scrapers.targeted_historical_scraper import TargetedHistoric
 from reddit_scraper.scrapers.deep_historical_scraper import DeepHistoricalScraper
 from reddit_scraper.scrapers.hybrid_historical_scraper import HybridHistoricalScraper
 from reddit_scraper.scrapers.pushshift_historical_scraper import PushshiftHistoricalScraper
+from reddit_scraper.scrapers.targeted_historical_scraper import TargetedHistoricalScraper
 
 print("DEBUG: cli.py before app = typer.Typer()", flush=True)
 app = typer.Typer(help="Reddit Finance Scraper - Collect submissions from finance subreddits")
@@ -59,6 +60,9 @@ print("DEBUG: cli.py after app.add_typer(scraper_app)", flush=True)
 # Import and include database management commands
 print("DEBUG: cli.py before from reddit_scraper.cli_db import app as db_app", flush=True)
 from reddit_scraper.cli_db import app as db_app
+from reddit_scraper.cli_db import query_for_gaps
+from reddit_scraper.storage.db import get_connection
+
 print("DEBUG: cli.py after from reddit_scraper.cli_db import app as db_app", flush=True)
 
 print("DEBUG: cli.py before app.add_typer(db_app)", flush=True)
@@ -446,10 +450,6 @@ def run_hybrid_scraper(
         
     except Exception as e:
         logger.error(f"Error running hybrid historical scraper: {str(e)}")
-        if verbose:
-            logger.exception(e)
-        sys.exit(1)
-
 
 @scraper_app.command("pushshift", deprecated=True)
 def run_pushshift_scraper(
@@ -458,27 +458,37 @@ def run_pushshift_scraper(
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose output")] = False,
 ) -> None:
     """
-    Run the Pushshift historical scraper.
+    DEPRECATED: Run historical scraper (now uses Reddit API instead of Pushshift).
     
-    This scraper uses the Pushshift API to retrieve historical posts from
-    the early days of each finance subreddit, going back to their creation.
+    This command has been updated to use the Reddit API instead of the deprecated
+    Pushshift API which returns 403 errors. For gap filling, use the fill-gaps command instead.
     
-    DEPRECATED: For historical data collection, use the main scraper with date parameters instead:
+    RECOMMENDED: Use the main scraper with date parameters instead:
     python -m reddit_scraper.cli scrape --since YYYY-MM-DD --config config.yaml
+    
+    Or use the gap filler:
+    python -m reddit_scraper.cli fill-gaps --min-duration 600
     """
     # Set up logging
     log_level = "DEBUG" if verbose else loglevel
     setup_logging(log_level)
     
-    logger.info("Starting Pushshift Historical Scraper")
+    logger.warning("DEPRECATED: pushshift command is deprecated. Pushshift API returns 403 errors.")
+    logger.warning("RECOMMENDATION: Use 'fill-gaps' command or main scraper with --since parameter instead.")
+    logger.info("Using Reddit API-based gap filler instead of deprecated Pushshift scraper")
     
     try:
-        # Create and run the scraper
-        scraper = PushshiftHistoricalScraper(config)
+        # Use TargetedHistoricalScraper instead of deprecated PushshiftHistoricalScraper
+        logger.warning("PushshiftHistoricalScraper is deprecated. Using TargetedHistoricalScraper instead.")
+        logger.warning("For targeted historical scraping, use TargetedHistoricalScraper.run() or run_for_window().")
+        
+        # Create a TargetedHistoricalScraper instance
+        config_obj = load_config(config_path)
+        scraper = TargetedHistoricalScraper(config_obj)
         asyncio.run(scraper.execute())
         
     except Exception as e:
-        logger.error(f"Error running Pushshift historical scraper: {str(e)}")
+        logger.error(f"Error running historical scraper: {str(e)}")
         if verbose:
             logger.exception(e)
         sys.exit(1)
@@ -656,11 +666,78 @@ def prometheus_server(
         logger.info("Prometheus server stopped")
 
 
-def main() -> None:
-    """Entry point for the CLI."""
-    print("DEBUG: main function started.", flush=True)
-    app()
+@app.command("fill-gaps")
+async def fill_gaps(
+    config: Annotated[str, typer.Option("--config", "-c", help="Path to configuration file")] = "config.yaml",
+    loglevel: Annotated[str, typer.Option("--loglevel", "-l", help="Logging level")] = "INFO",
+    min_duration: Annotated[int, typer.Option("--min-duration", help="Minimum gap duration in seconds to fill")] = 600,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Find and list gaps without filling them")] = False,
+) -> None:
+    """Find and fill time gaps in the submissions data."""
+    setup_logging(loglevel)
+    config_obj = Config.from_files(config)
+
+    if not config_obj.postgres.enabled:
+        logger.error("PostgreSQL is not enabled in configuration")
+        sys.exit(1)
+
+    conn = get_connection(config_obj.postgres)
+    if not conn:
+        logger.error("Connection failed! Check PostgreSQL credentials and connectivity.")
+        sys.exit(1)
+
+    try:
+        logger.info(f"Searching for gaps longer than {min_duration} seconds...")
+        gaps = query_for_gaps(conn, min_duration)
+        logger.info(f"Found {len(gaps)} gaps to potentially fill.")
+
+        if not gaps:
+            logger.info("No gaps found. Exiting.")
+            return
+
+        if dry_run:
+            logger.info("DRY RUN: The following gaps would be filled:")
+            print(json.dumps(gaps, indent=2))
+            return
+
+        logger.info("Starting gap filling process...")
+        # Sort gaps by duration in descending order (largest to smallest)
+        sorted_gaps = sorted(gaps, key=lambda x: x['gap_duration_seconds'], reverse=True)
+        logger.info(f"Processing {len(sorted_gaps)} gaps in descending order of duration")
+        
+        # Process each gap from largest to smallest
+        for i, gap in enumerate(sorted_gaps, 1):
+            subreddit = gap['subreddit']
+            start_str = gap['gap_start']
+            end_str = gap['gap_end']
+            duration = gap['gap_duration_seconds']
+            
+            logger.info(f"--- Filling gap {i}/{len(sorted_gaps)} for r/{subreddit} ({duration:.2f}s) ---")
+            logger.info(f"Window: {start_str} -> {end_str}")
+            logger.info(f"Gap rank: #{i} (duration: {duration:.0f} seconds)")
+
+            try:
+                start_date = datetime.fromisoformat(start_str)
+                end_date = datetime.fromisoformat(end_str)
+
+                scraper = TargetedHistoricalScraper(config_obj)
+                try:
+                    await scraper.initialize()
+                    records_added = await scraper.run_for_window(subreddit, start_date, end_date)
+                    logger.info(f"Completed filling gap for r/{subreddit}. Added {records_added} records.")
+                finally:
+                    # Ensure proper cleanup to prevent unclosed sessions
+                    await scraper.cleanup()
+
+            except Exception as e:
+                logger.error(f"Failed to fill gap for r/{subreddit}: {e}", exc_info=True)
+        
+        logger.info("Gap filling process finished.")
+
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
-    main()
+    print("DEBUG: main function started.", flush=True)
+    app()

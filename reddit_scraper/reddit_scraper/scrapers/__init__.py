@@ -5,3 +5,4 @@ from reddit_scraper.scrapers.targeted_historical_scraper import TargetedHistoric
 from reddit_scraper.scrapers.deep_historical_scraper import DeepHistoricalScraper
 from reddit_scraper.scrapers.hybrid_historical_scraper import HybridHistoricalScraper
 from reddit_scraper.scrapers.pushshift_historical_scraper import PushshiftHistoricalScraper
+# GapFillerScraper deprecated - use TargetedHistoricalScraper.run_for_window() instead

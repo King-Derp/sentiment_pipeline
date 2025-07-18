@@ -16,6 +16,7 @@ import aiohttp
 from dateutil.relativedelta import relativedelta
 
 from reddit_scraper.base_scraper import BaseScraper
+from reddit_scraper.config import Config
 from reddit_scraper.storage.csv_sink import CsvSink
 from reddit_scraper.models.submission import SubmissionRecord
 
@@ -54,21 +55,15 @@ class PushshiftHistoricalScraper(BaseScraper):
     Uses the Pushshift API to retrieve historical posts from the early days of each subreddit.
     """
     
-    def __init__(self, config_path: str = "config.yaml"):
-        """Initialize the Pushshift historical scraper.
-        
-        Args:
-            config_path: Path to the configuration file
-        """
-        super().__init__(config_path)
+    def __init__(self, config: Config):
+        """Initialize the Pushshift historical scraper."""
+        super().__init__(config)
         self.total_collected = 0
-        self.session = None
-    
+        self.session: Optional[aiohttp.ClientSession] = None
+
     async def initialize(self) -> None:
         """Initialize the scraper components."""
-        # Call parent initialize to set up the Reddit client and other components
         await super().initialize()
-        
         # Create aiohttp session for Pushshift API
         self.session = aiohttp.ClientSession()
     
@@ -212,7 +207,33 @@ class PushshiftHistoricalScraper(BaseScraper):
             await asyncio.sleep(1)
         
         return period_collected
-    
+
+    async def run_for_window(self, subreddit: str, start_date: datetime.datetime, end_date: datetime.datetime) -> int:
+        """Run the scraper for a specific subreddit and time window.
+
+        This method is designed for targeted gap-filling. It initializes the
+        scraper, scrapes the specified window, and then cleans up resources.
+
+        Args:
+            subreddit: The subreddit to scrape.
+            start_date: The start of the time window.
+            end_date: The end of the time window.
+
+        Returns:
+            The number of submissions collected.
+        """
+        logger.info(f"Starting targeted scrape for r/{subreddit} from {start_date.date()} to {end_date.date()}")
+        await self.initialize()
+        try:
+            collected_count = await self.scrape_time_period(subreddit, start_date, end_date)
+            logger.info(f"Completed targeted scrape for r/{subreddit}. Collected {collected_count} submissions.")
+            return collected_count
+        except Exception as e:
+            logger.error(f"An error occurred during targeted scrape for r/{subreddit}: {e}", exc_info=True)
+            return 0  # Return 0 if an error occurs
+        finally:
+            await self.cleanup()
+
     async def run(self) -> int:
         """Run the Pushshift historical scraper.
         

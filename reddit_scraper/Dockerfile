@@ -20,6 +20,7 @@ RUN poetry config virtualenvs.create false
 # Copy inner package directly to /app/reddit_scraper to avoid double nesting
 # Copy full project directory so nested package structure is preserved
 COPY reddit_scraper/ /app/reddit_scraper/
+COPY reddit_scraper/run_gap_filler.py /app/
 
 # Install dependencies
 RUN poetry install --only main --no-interaction --no-ansi

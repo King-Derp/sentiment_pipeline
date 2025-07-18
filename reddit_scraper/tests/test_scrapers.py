@@ -6,7 +6,9 @@ import os
 from reddit_scraper.scrapers.targeted_historical_scraper import TargetedHistoricalScraper
 from reddit_scraper.scrapers.deep_historical_scraper import DeepHistoricalScraper
 from reddit_scraper.scrapers.hybrid_historical_scraper import HybridHistoricalScraper
+from reddit_scraper.scrapers.pushshift_historical_scraper import PushshiftHistoricalScraper
 from reddit_scraper.base_scraper import BaseScraper
+import datetime
 
 
 class TestScrapers(unittest.TestCase):
@@ -104,6 +106,32 @@ class TestScrapers(unittest.TestCase):
         # Check that search_by_term was called
         mock_search_by_term.assert_called()
         self.assertEqual(result, 0)  # No records collected in our mock
+
+
+    @patch('reddit_scraper.reddit_scraper.scrapers.pushshift_historical_scraper.PushshiftHistoricalScraper.cleanup', new_callable=AsyncMock)
+    @patch('reddit_scraper.reddit_scraper.scrapers.pushshift_historical_scraper.PushshiftHistoricalScraper.scrape_time_period', new_callable=AsyncMock, return_value=42)
+    @patch('reddit_scraper.reddit_scraper.scrapers.pushshift_historical_scraper.PushshiftHistoricalScraper.initialize', new_callable=AsyncMock)
+    async def test_pushshift_scraper_run_for_window(self, mock_initialize, mock_scrape_time_period, mock_cleanup):
+        """Test that PushshiftHistoricalScraper.run_for_window works correctly."""
+        # Arrange
+        scraper = PushshiftHistoricalScraper(self.config_path)
+        # We need to bypass the setUp patch for __init__ for this test
+        self.mock_init.stop()
+        scraper.__init__(self.config_path)
+        self.mock_init.start()
+
+        subreddit = "testsubreddit"
+        start_date = datetime.datetime(2023, 1, 1)
+        end_date = datetime.datetime(2023, 1, 31)
+
+        # Act
+        result = await scraper.run_for_window(subreddit, start_date, end_date)
+
+        # Assert
+        mock_initialize.assert_awaited_once()
+        mock_scrape_time_period.assert_awaited_once_with(subreddit, start_date, end_date)
+        mock_cleanup.assert_awaited_once()
+        self.assertEqual(result, 42)
 
 
 if __name__ == '__main__':

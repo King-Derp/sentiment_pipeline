@@ -121,6 +121,28 @@ The primary way to run the scraper is via its command-line interface, which supp
 - `--reset-backfill`: If set, ignores previously scraped submission IDs and re-fetches all data within the time window. Use with caution.
 - `--config CONFIG_PATH`: Path to the configuration file. Default: `config.yaml`.
 - `--loglevel LOGLEVEL`: Logging level (e.g., `INFO`, `DEBUG`). Default: `INFO`.
+### Database and Maintenance Commands
+
+The scraper includes commands for database maintenance, such as finding and filling data gaps.
+
+1.  **Find Data Gaps in TimescaleDB:**
+    This command queries the `submissions` table to find time gaps longer than a specified duration.
+
+    ```bash
+    python -m reddit_scraper.cli db find-gaps --min-duration 600 --output gaps.json
+    ```
+    - `--min-duration`: Minimum gap duration in seconds to report. Default: 600 (10 minutes).
+    - `--output`: Optional file path to save the JSON output. If not provided, output is printed to the console.
+
+2.  **Fill Data Gaps:**
+    This command automates the process of finding and filling data gaps. It uses the `PushshiftHistoricalScraper` to backfill missing data for each identified gap.
+
+    ```bash
+    python -m reddit_scraper.cli fill-gaps --min-duration 600
+    ```
+    - `--min-duration`: Minimum gap duration in seconds to fill. Default: 600.
+    - `--dry-run`: If set, the command will find and list gaps without actually running the scraper to fill them. This is useful for safely previewing the work to be done.
+
 ### Docker Deployment
 
 The project includes a `Dockerfile` and can be orchestrated using the main project `docker-compose.yml`.

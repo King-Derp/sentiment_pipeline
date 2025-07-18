@@ -3,6 +3,7 @@
 import os
 import tempfile
 import unittest
+import asyncio
 from unittest.mock import patch, MagicMock
 
 import typer
@@ -97,3 +98,62 @@ maintenance_interval_sec: 61
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from reddit_scraper.cli import fill_gaps
+
+@patch("reddit_scraper.cli.setup_logging")
+@patch("reddit_scraper.cli.Config.from_files")
+@patch("reddit_scraper.cli.get_connection")
+@patch("reddit_scraper.cli.query_for_gaps")
+@patch("reddit_scraper.cli.PushshiftHistoricalScraper")
+class TestFillGapsCli(unittest.IsolatedAsyncioTestCase):
+    """Test cases for the fill-gaps CLI command."""
+
+    def setUp(self):
+        self.fake_gaps = [
+            {
+                "subreddit": "testsubreddit",
+                "gap_start": "2023-01-01T12:00:00",
+                "gap_end": "2023-01-01T12:30:00",
+                "gap_duration_seconds": 1800.0
+            }
+        ]
+
+    async def test_fill_gaps_dry_run(self, mock_scraper, mock_query_gaps, mock_get_conn, mock_config, mock_setup_logging):
+        """Test fill-gaps command with --dry-run option."""
+        mock_query_gaps.return_value = self.fake_gaps
+        mock_config.return_value = MagicMock(postgres=MagicMock(enabled=True))
+        mock_get_conn.return_value = MagicMock()
+
+        await fill_gaps(config="config.yaml", loglevel="INFO", min_duration=600, dry_run=True)
+
+        mock_query_gaps.assert_called_once()
+        mock_scraper.assert_not_called()
+
+    async def test_fill_gaps_no_gaps_found(self, mock_scraper, mock_query_gaps, mock_get_conn, mock_config, mock_setup_logging):
+        """Test fill-gaps command when no gaps are found."""
+        mock_query_gaps.return_value = []
+        mock_config.return_value = MagicMock(postgres=MagicMock(enabled=True))
+        mock_get_conn.return_value = MagicMock()
+
+        await fill_gaps(config="config.yaml", loglevel="INFO", min_duration=600, dry_run=False)
+
+        mock_query_gaps.assert_called_once()
+        mock_scraper.assert_not_called()
+
+    async def test_fill_gaps_runs_scraper(self, mock_scraper, mock_query_gaps, mock_get_conn, mock_config, mock_setup_logging):
+        """Test that fill-gaps command runs the scraper for found gaps."""
+        mock_query_gaps.return_value = self.fake_gaps
+        mock_config_instance = MagicMock(postgres=MagicMock(enabled=True))
+        mock_config.return_value = mock_config_instance
+        mock_get_conn.return_value = MagicMock()
+
+        mock_scraper_instance = mock_scraper.return_value
+        mock_scraper_instance.run_for_window.return_value = 42
+
+        await fill_gaps(config="config.yaml", loglevel="INFO", min_duration=600, dry_run=False)
+
+        mock_query_gaps.assert_called_once()
+        mock_scraper.assert_called_once_with(mock_config_instance)
+        mock_scraper_instance.run_for_window.assert_called_once()

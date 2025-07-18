@@ -8,7 +8,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
-from typing import List, Set, Dict, Optional, Tuple, Any
+from typing import List, Set, Dict, Optional, Tuple, Any, Union
 
 from reddit_scraper.collector.collector import SubmissionCollector
 from reddit_scraper.config import Config
@@ -24,13 +24,17 @@ logger = logging.getLogger(__name__)
 class BaseScraper(ABC):
     """Base class for all Reddit scrapers."""
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config: Union[str, Config] = "config.yaml"):
         """Initialize the base scraper with configuration.
         
         Args:
-            config_path: Path to the configuration file
+            config (Union[str, Config]): Either a path to the configuration file or an already
+                instantiated ``Config`` object.
         """
-        self.config_path = config_path
+        # Store the raw path for later use (helpful for logging and re-loading), but only
+        # if the caller passed a string. When a pre-built ``Config`` is supplied, there
+        # may be no meaningful file path, so we keep the attribute as ``None``.
+        self.config_path: Optional[str] = config if isinstance(config, str) else None
         logger.warning("========== SCRAPER INITIALIZATION BEGIN ==========")
         
         # Log environment variables to diagnose potential issues
@@ -47,7 +51,10 @@ class BaseScraper(ABC):
         logger.warning(f"Environment variables: {env_vars}")
         
         # Load the configuration
-        self.config = Config.from_files(config_path)
+        if isinstance(config, Config):
+            self.config = config
+        else:
+            self.config = Config.from_files(config)
         logger.warning("Configuration loaded from file")
         
         # Force set PostgreSQL configuration from environment if available
@@ -103,20 +110,52 @@ class BaseScraper(ABC):
             logger.error("CRITICAL ERROR: PostgreSQL configuration is missing in config!")
             use_postgres = False
         
-        # Create composite sink with detailed logging
+        # ---------------------------
+        # Create data sinks
+        # ---------------------------
         try:
-            logger.warning(f"Creating CompositeSink with csv_path={self.config.csv_path}, use_postgres={use_postgres}")
-            self.data_sink = CompositeSink(
-                csv_path=self.config.csv_path,
-                use_postgres=use_postgres
+            from reddit_scraper.storage.csv_sink import CsvSink
+            # Always include CSV sink as the primary storage
+            csv_sink = CsvSink(self.config.csv_path)
+            sinks = [csv_sink]
+
+            if use_postgres:
+                # Import the appropriate Postgres sink implementation
+                try:
+                    from reddit_scraper.storage.sqlalchemy_postgres_sink import (
+                        SQLAlchemyPostgresSink as PgSink,
+                    )
+                except ImportError:
+                    from reddit_scraper.storage.postgres_sink import PostgresSink as PgSink  # type: ignore
+
+                # Initialise the DB engine / SessionLocal once
+                from reddit_scraper.storage.database import init_db
+
+                if init_db(pg_config):
+                    try:
+                        pg_sink = PgSink(pg_config)
+                        sinks.append(pg_sink)
+                        logger.warning("PostgreSQL sink initialised and added to CompositeSink")
+                    except Exception as pg_err:
+                        logger.error(
+                            "Failed to instantiate PostgreSQL sink after init_db – continuing with CSV only: %s",
+                            pg_err,
+                        )
+                else:
+                    logger.error(
+                        "init_db returned False – Postgres disabled or initialisation failed; using CSV only"
+                    )
+
+            logger.warning(
+                "Creating CompositeSink with %d sink(s): %s",
+                len(sinks),
+                ", ".join(type(s).__name__ for s in sinks),
             )
+            self.data_sink = CompositeSink(sinks)
             logger.warning("CompositeSink created successfully")
         except Exception as e:
-            logger.error(f"ERROR creating CompositeSink: {str(e)}")
-            logger.error("CompositeSink creation stack trace:", exc_info=True)
-            # Fall back to CSV-only sink
-            logger.warning("Falling back to CSV-only storage due to error")
-            self.data_sink = CompositeSink(csv_path=self.config.csv_path, use_postgres=False)
+            logger.error("CRITICAL: Unable to create any data sink – scraping aborting: %s", e)
+            raise
         
         logger.warning("========== SCRAPER INITIALIZATION COMPLETE ==========")
         

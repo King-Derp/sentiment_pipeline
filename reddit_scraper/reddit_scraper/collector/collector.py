@@ -121,7 +121,12 @@ class SubmissionCollector:
                 if after:
                     params["after"] = after
                     
-                async for submission in subreddit.search(query, sort=sort, params=params):
+                async for submission in subreddit.search(
+                    query, 
+                    sort=sort, 
+                    syntax='cloudsearch',  # Explicitly use CloudSearch syntax for timestamp queries
+                    params=params
+                ):
                     submissions.append(submission)
                 
                 return submissions
@@ -208,9 +213,14 @@ class SubmissionCollector:
         try:
             # Get subreddit
             subreddit = await self.reddit_client.get_subreddit(subreddit_name)
+            logger.info(f"Successfully got subreddit object for r/{subreddit_name}")
             
             # Build CloudSearch query for the time window
             query = f"timestamp:{start_epoch}..{end_epoch}"
+            logger.info(f"CloudSearch query: {query}")
+            logger.info(f"Searching with sort='new', limit=1000, syntax='cloudsearch' (subreddit-restricted by default)")
+            logger.info(f"Current seen_ids count: {len(seen_ids)}")
+            logger.info(f"Epoch range: {start_epoch} to {end_epoch} (duration: {end_epoch - start_epoch} seconds)")
             
             # Fetch submissions
             submissions = await self._search_submissions(
@@ -220,8 +230,30 @@ class SubmissionCollector:
                 limit=1000,
             )
             
+            logger.info(f"Reddit API returned {len(submissions)} total submissions")
+            
             # Filter out already seen submissions
             new_submissions = [s for s in submissions if s.id not in seen_ids]
+            logger.info(f"After filtering seen IDs: {len(new_submissions)} new submissions")
+            
+            # Log sample of submission IDs and timestamps for debugging
+            if new_submissions:
+                logger.info("Sample of new submissions:")
+                for i, sub in enumerate(new_submissions[:5]):  # Show first 5
+                    sub_time = datetime.fromtimestamp(sub.created_utc, tz=timezone.utc)
+                    logger.info(f"  {i+1}. ID: {sub.id}, Created: {sub_time}, Title: {sub.title[:50]}...")
+            else:
+                logger.warning("No new submissions found after filtering")
+                if submissions:
+                    logger.warning("All returned submissions were already in seen_ids")
+                    # Log sample of filtered submissions
+                    logger.info("Sample of filtered submissions (already seen):")
+                    for i, sub in enumerate(submissions[:3]):
+                        sub_time = datetime.fromtimestamp(sub.created_utc, tz=timezone.utc)
+                        logger.info(f"  {i+1}. ID: {sub.id}, Created: {sub_time}, Title: {sub.title[:50]}...")
+                else:
+                    logger.warning("Reddit API returned no submissions for this query")
+                    logger.warning("This could indicate: 1) No posts in time range, 2) CloudSearch limitations, 3) API rate limiting")
             
             # Convert to records
             records = [submission_to_record(s) for s in new_submissions]
@@ -240,6 +272,6 @@ class SubmissionCollector:
         except Exception as e:
             logger.error(
                 f"Failed to collect historic from r/{subreddit_name} "
-                f"between {start_str} and {end_str}: {str(e)}"
+                f"between {start_str} and {end_str}: {str(e)}", exc_info=True
             )
             return []

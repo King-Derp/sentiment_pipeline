@@ -5,7 +5,7 @@ import os
 import sys
 import datetime
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 import typer
 from typing_extensions import Annotated
@@ -292,6 +292,101 @@ def db_info(
         
         print("\nFor more detailed metrics, use the metrics command with --format json")
         
+    finally:
+        conn.close()
+
+
+def query_for_gaps(conn, min_duration: int) -> List[Dict[str, Any]]:
+    """Queries the database for time gaps in submission data.
+
+    Args:
+        conn: An active psycopg2 database connection.
+        min_duration: The minimum gap duration in seconds.
+
+    Returns:
+        A list of dictionaries, each representing a data gap.
+    """
+    # Reason: The original query targeted a legacy 'submissions' table.
+    # The current schema uses a 'raw_events' table with a JSONB payload.
+    # This updated query works with the current schema by extracting the necessary
+    # fields from the JSONB payload and casting the timestamp correctly.
+    query = """
+    WITH posts_with_previous AS (
+        SELECT
+            payload->>'subreddit' AS subreddit,
+            TO_TIMESTAMP((payload->>'created_utc')::float) AS created_utc,
+            LAG(TO_TIMESTAMP((payload->>'created_utc')::float), 1) OVER (
+                PARTITION BY payload->>'subreddit' ORDER BY TO_TIMESTAMP((payload->>'created_utc')::float)
+            ) AS prev_created_utc
+        FROM
+            raw_events
+        WHERE
+            source = 'reddit'  -- Ensure we only query Reddit data
+    )
+    SELECT
+        subreddit,
+        prev_created_utc AS gap_start,
+        created_utc AS gap_end,
+        EXTRACT(EPOCH FROM (created_utc - prev_created_utc)) AS gap_duration_seconds
+    FROM
+        posts_with_previous
+    WHERE
+        prev_created_utc IS NOT NULL
+        AND EXTRACT(EPOCH FROM (created_utc - prev_created_utc)) > %s
+    ORDER BY
+        gap_duration_seconds DESC;
+    """
+    with conn.cursor() as cur:
+        cur.execute(query, (min_duration,))
+        gaps = cur.fetchall()
+
+    results = []
+    for gap in gaps:
+        results.append({
+            "subreddit": gap[0],
+            "gap_start": gap[1].isoformat() if gap[1] else None,
+            "gap_end": gap[2].isoformat() if gap[2] else None,
+            "gap_duration_seconds": float(gap[3]) if gap[3] is not None else None
+        })
+    return results
+
+
+@app.command("find-gaps")
+def find_gaps(
+    config: Annotated[str, typer.Option("--config", "-c", help="Path to configuration file")] = "config.yaml",
+    loglevel: Annotated[str, typer.Option("--loglevel", "-l", help="Logging level")] = "INFO",
+    min_duration: Annotated[int, typer.Option("--min-duration", help="Minimum gap duration in seconds")] = 600,
+    output_file: Annotated[Optional[str], typer.Option("--output-file", "-o", help="Path to save the output JSON file")] = None,
+) -> None:
+    """Find time gaps in the submissions data greater than a specified duration."""
+    setup_logging(loglevel)
+    config_obj = Config.from_files(config)
+
+    if not config_obj.postgres.enabled:
+        logger.error("PostgreSQL is not enabled in configuration")
+        sys.exit(1)
+
+    conn = get_connection()
+    if not conn:
+        logger.error("Connection failed! Check PostgreSQL credentials and connectivity.")
+        sys.exit(1)
+
+    logger.info(f"Searching for gaps longer than {min_duration} seconds...")
+
+    try:
+        results = query_for_gaps(conn, min_duration)
+        logger.info(f"Found {len(results)} gaps.")
+
+        if output_file:
+            with open(output_file, 'w') as f:
+                json.dump(results, f, indent=2)
+            logger.info(f"Gap report saved to {output_file}")
+        else:
+            print(json.dumps(results, indent=2))
+
+    except Exception as e:
+        logger.error(f"An error occurred while querying for gaps: {e}", exc_info=True)
+        sys.exit(1)
     finally:
         conn.close()
 
