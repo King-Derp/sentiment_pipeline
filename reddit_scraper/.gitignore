@@ -30,7 +30,8 @@ data/
 logs/
 *.csv
 *.log
-
+reconciliation/backups/
+reconciliation/outputs/
 # Temporary files
 .DS_Store
 Thumbs.db
