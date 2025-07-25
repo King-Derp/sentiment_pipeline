@@ -73,7 +73,7 @@ class Config:
     # YAML config values with defaults
     subreddits: List[str] = field(default_factory=list)
     window_days: int = 30
-    csv_path: str = "/app/data/reddit_finance.csv"
+    csv_path: str = "data/reddit_finance.csv"
     initial_backfill: bool = True
     failure_threshold: int = 5
     maintenance_interval_sec: int = 600
@@ -120,6 +120,7 @@ class Config:
             user=os.getenv("PG_USER", "postgres"),
             password=os.getenv("PG_PASSWORD", ""),
             enabled=os.getenv("USE_POSTGRES", "true").lower() == "true",
+            use_sqlalchemy=os.getenv("USE_SQLALCHEMY", "false").lower() == "true",
         )
         
         # Set the postgres attribute directly
@@ -181,20 +182,14 @@ class Config:
                         current_password = getattr(current_postgres, "password", "")
                         current_enabled = getattr(current_postgres, "enabled", True)
                         current_use_sqlalchemy = getattr(current_postgres, "use_sqlalchemy", False)
-
-                        # Get password from YAML, substituting ${PG_PASSWORD} if present
-                        yaml_password = postgres_dict.get("password", current_password)
-                        if yaml_password == "${PG_PASSWORD}":
-                            yaml_password = os.getenv("PG_PASSWORD", current_password)
-                            # If PG_PASSWORD is not set in env, it will fall back to current_password (which might be from initial env load or default)
-
+                        
                         # Create a new PostgresConfig with the combined values
                         config.postgres = PostgresConfig(
                             host=postgres_dict.get("host", current_host),
                             port=postgres_dict.get("port", current_port),
                             database=postgres_dict.get("database", current_database),
                             user=postgres_dict.get("user", current_user),
-                            password=yaml_password,  # Use the substituted password
+                            password=postgres_dict.get("password", current_password),
                             enabled=postgres_dict.get("enabled", current_enabled),
                             use_sqlalchemy=postgres_dict.get("use_sqlalchemy", current_use_sqlalchemy)
                         )

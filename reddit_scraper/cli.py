@@ -1,5 +1,3 @@
-print("DEBUG: cli.py TOP LEVEL EXECUTION", flush=True)
-
 """Command-line interface for the Reddit Finance Scraper."""
 
 import asyncio
@@ -23,14 +21,11 @@ from reddit_scraper.collector.collector import SubmissionCollector
 from reddit_scraper.collector.error_handler import ConsecutiveErrorTracker
 from reddit_scraper.collector.maintenance import MaintenanceRunner
 from reddit_scraper.collector.rate_limiter import RateLimiter
-from reddit_scraper.config import Config, PostgresConfig
+from reddit_scraper.config import Config
 from reddit_scraper.monitoring.metrics import PrometheusExporter
 from reddit_scraper.reddit_client import RedditClient
 from reddit_scraper.storage.csv_sink import CsvSink
 from reddit_scraper.storage.composite_sink import CompositeSink
-from reddit_scraper.storage.postgres_sink import PostgresSink
-from reddit_scraper.storage.sqlalchemy_postgres_sink import SQLAlchemyPostgresSink
-from .storage.database import init_db as initialize_database_session
 
 # Import scraper classes
 from reddit_scraper.base_scraper import BaseScraper
@@ -38,74 +33,22 @@ from reddit_scraper.scrapers.targeted_historical_scraper import TargetedHistoric
 from reddit_scraper.scrapers.deep_historical_scraper import DeepHistoricalScraper
 from reddit_scraper.scrapers.hybrid_historical_scraper import HybridHistoricalScraper
 from reddit_scraper.scrapers.pushshift_historical_scraper import PushshiftHistoricalScraper
-from reddit_scraper.scrapers.targeted_historical_scraper import TargetedHistoricalScraper
 
-print("DEBUG: cli.py before app = typer.Typer()", flush=True)
 app = typer.Typer(help="Reddit Finance Scraper - Collect submissions from finance subreddits")
-print("DEBUG: cli.py after app = typer.Typer()", flush=True)
-
 logger = logging.getLogger(__name__)
 
 # Create subcommands for different scraper types
 # Note: Most historical scrapers are deprecated except for the targeted scraper
-print("DEBUG: cli.py before scraper_app = typer.Typer()", flush=True)
 scraper_app = typer.Typer(help="Specialized scrapers for historical data collection")
-print("DEBUG: cli.py after scraper_app = typer.Typer()", flush=True)
-
-print("DEBUG: cli.py before app.add_typer(scraper_app)", flush=True)
 app.add_typer(scraper_app, name="scraper")
-print("DEBUG: cli.py after app.add_typer(scraper_app)", flush=True)
-
 
 # Import and include database management commands
-print("DEBUG: cli.py before from reddit_scraper.cli_db import app as db_app", flush=True)
-from .cli_db import app as db_app
-from .cli_db import query_for_gaps
-from reddit_scraper.storage.db import get_connection
-
-print("DEBUG: cli.py after from reddit_scraper.cli_db import app as db_app", flush=True)
-
-print("DEBUG: cli.py before app.add_typer(db_app)", flush=True)
+from reddit_scraper.cli_db import app as db_app
 app.add_typer(db_app, name="db", help="Manage PostgreSQL database")
-print("DEBUG: cli.py after app.add_typer(db_app)", flush=True)
-
 
 # Global reference to the maintenance runner for signal handling
 _maintenance_runner = None
 _shutdown_event = None
-
-import pandas as pd
-
-def clean_csv_timestamps(csv_path: str):
-    """Load a CSV, normalize 'created_utc' to numeric timestamps, and save it back."""
-    logger.info(f"Checking timestamp integrity for {csv_path}...")
-    try:
-        df = pd.read_csv(csv_path, low_memory=False)
-        if 'created_utc' not in df.columns:
-            logger.warning(f"CSV file at {csv_path} does not have 'created_utc' column. Skipping cleaning.")
-            return
-
-        # Create a boolean mask for rows where 'created_utc' is a string.
-        needs_conversion_mask = df['created_utc'].apply(lambda x: isinstance(x, str))
-
-        if needs_conversion_mask.any():
-            logger.warning(f"Found {needs_conversion_mask.sum()} rows with string-based timestamps in {csv_path}. Converting to numeric...")
-            
-            datetime_series = pd.to_datetime(df.loc[needs_conversion_mask, 'created_utc'], errors='coerce')
-            df.loc[needs_conversion_mask, 'created_utc'] = (datetime_series.astype('int64') // 10**9)
-
-            df['created_utc'] = pd.to_numeric(df['created_utc'], errors='coerce')
-
-            df.to_csv(csv_path, index=False, encoding='utf-8')
-            logger.info(f"Successfully cleaned and saved {csv_path}.")
-        else:
-            logger.info(f"Timestamp format in {csv_path} is already correct. No cleaning needed.")
-
-    except FileNotFoundError:
-        logger.info(f"CSV file at {csv_path} not found. Skipping cleaning.")
-    except Exception as e:
-        logger.error(f"An error occurred while cleaning CSV file {csv_path}: {e}", exc_info=True)
-
 
 def setup_logging(log_level: str = "INFO") -> None:
     """
@@ -186,7 +129,6 @@ async def run_scraper(
     daemon: bool = False,
     reset_backfill: bool = False,
     since_date: Optional[str] = None,
-    sink_type: str = "composite",
     verbose: bool = False,
 ) -> None:
     """
@@ -197,7 +139,6 @@ async def run_scraper(
         daemon: Whether to run in daemon mode (continuous maintenance)
         reset_backfill: Whether to reset the backfill (ignore existing IDs)
         since_date: Date to start backfill from (YYYY-MM-DD)
-        sink_type: Data sink to use (csv, postgres, or composite)
         verbose: Whether to enable verbose logging
     """
     global _maintenance_runner, _shutdown_event
@@ -215,45 +156,12 @@ async def run_scraper(
         logger.critical("Invalid configuration, aborting")
         sys.exit(1)
     
-    # Create data sink based on user's choice
-    if sink_type == "csv":
-        data_sink = CsvSink(config.csv_path)
-        logger.info("Using CSV sink for data storage.")
-    elif sink_type == "postgres":
-        if config.postgres and config.postgres.enabled and config.postgres.use_sqlalchemy:
-            if initialize_database_session(config.postgres):
-                try:
-                    data_sink = SQLAlchemyPostgresSink()
-                    logger.info("Using SQLAlchemy PostgreSQL sink for data storage.")
-                except Exception as e:
-                    logger.critical(f"Failed to initialize SQLAlchemyPostgresSink: {e}. Aborting.")
-                    sys.exit(1)
-            else:
-                logger.critical("Database initialization failed. PostgreSQL sink cannot be used. Aborting.")
-                sys.exit(1)
-        else:
-            logger.critical("PostgreSQL sink is not configured or enabled for SQLAlchemy. Aborting.")
-            sys.exit(1)
-    elif sink_type == "composite":
-        use_postgres = (config.postgres and config.postgres.enabled and config.postgres.use_sqlalchemy)
-        if use_postgres:
-            if initialize_database_session(config.postgres):
-                try:
-                    pg_sink = SQLAlchemyPostgresSink()
-                    logger.info("SQLAlchemyPostgresSink initialized successfully")
-                except Exception as e:
-                    logger.error(f"Failed to initialize SQLAlchemyPostgresSink: {e}. Proceeding with CSV sink only.")
-                    use_postgres = False
-            else:
-                logger.error("Database initialization failed. SQLAlchemy PostgreSQL sink will not be used.")
-                use_postgres = False
-        data_sink = CompositeSink(config.csv_path, use_postgres)
-        active_sinks_names = [type(s).__name__ for s in data_sink.sinks]
-        logger.info(f"Using composite sink. Data will be written to: {', '.join(active_sinks_names)}")
-    else:
-        logger.critical(f"Invalid sink type '{sink_type}'. Use 'csv', 'postgres', or 'composite'. Aborting.")
-        sys.exit(1)
-
+    # Create components
+    # Use CompositeSink to enable both CSV and PostgreSQL storage
+    use_postgres = os.environ.get('USE_POSTGRES', 'false').lower() in ('true', '1', 'yes')
+    data_sink = CompositeSink(config.csv_path, use_postgres=use_postgres)
+    logger.info(f"Using {'PostgreSQL and ' if use_postgres else ''}CSV storage")
+    
     reddit_client = RedditClient(config)
     rate_limiter = RateLimiter(config.rate_limit)
     error_tracker = ConsecutiveErrorTracker(config.failure_threshold)
@@ -359,7 +267,6 @@ def scrape(
     daemon: Annotated[bool, typer.Option("--daemon", "-d", help="Run in daemon mode (continuous maintenance)")] = False,
     reset_backfill: Annotated[bool, typer.Option("--reset-backfill", "-r", help="Reset backfill (ignore existing IDs)")] = False,
     since: Annotated[Optional[str], typer.Option("--since", "-s", help="Date to start backfill from (YYYY-MM-DD)")] = None,
-    sink: Annotated[str, typer.Option("--sink", help="Data sink to use (csv, postgres, or composite)")] = "composite",
     loglevel: Annotated[str, typer.Option("--loglevel", "-l", help="Logging level")] = "INFO",
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose output")] = False,
 ) -> None:
@@ -368,7 +275,6 @@ def scrape(
     
     Run in one-shot mode for backfill or daemon mode for continuous updates.
     """
-    print("DEBUG: scrape command started.", flush=True)
     # Set up logging
     log_level = "DEBUG" if verbose else loglevel
     setup_logging(log_level)
@@ -380,25 +286,12 @@ def scrape(
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     
     try:
-        # Load configuration
-        config_obj = Config.from_files(config)
-        
-        # Convert since_date string to Unix timestamp if provided
-        since_timestamp = None
-        if since:
-            since_timestamp = parse_date(since)
-        
-        logger.warning("Running pre-flight data cleaning check on CSV file...")
-        clean_csv_timestamps(config_obj.csv_path)
-        logger.warning("Pre-flight data cleaning check complete.")
-        
         # Run the scraper
         asyncio.run(run_scraper(
             config_path=config,
             daemon=daemon,
             reset_backfill=reset_backfill,
             since_date=since,
-            sink_type=sink,
             verbose=verbose,
         ))
     except KeyboardInterrupt:
@@ -497,6 +390,10 @@ def run_hybrid_scraper(
         
     except Exception as e:
         logger.error(f"Error running hybrid historical scraper: {str(e)}")
+        if verbose:
+            logger.exception(e)
+        sys.exit(1)
+
 
 @scraper_app.command("pushshift", deprecated=True)
 def run_pushshift_scraper(
@@ -505,37 +402,27 @@ def run_pushshift_scraper(
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose output")] = False,
 ) -> None:
     """
-    DEPRECATED: Run historical scraper (now uses Reddit API instead of Pushshift).
+    Run the Pushshift historical scraper.
     
-    This command has been updated to use the Reddit API instead of the deprecated
-    Pushshift API which returns 403 errors. For gap filling, use the fill-gaps command instead.
+    This scraper uses the Pushshift API to retrieve historical posts from
+    the early days of each finance subreddit, going back to their creation.
     
-    RECOMMENDED: Use the main scraper with date parameters instead:
+    DEPRECATED: For historical data collection, use the main scraper with date parameters instead:
     python -m reddit_scraper.cli scrape --since YYYY-MM-DD --config config.yaml
-    
-    Or use the gap filler:
-    python -m reddit_scraper.cli fill-gaps --min-duration 600
     """
     # Set up logging
     log_level = "DEBUG" if verbose else loglevel
     setup_logging(log_level)
     
-    logger.warning("DEPRECATED: pushshift command is deprecated. Pushshift API returns 403 errors.")
-    logger.warning("RECOMMENDATION: Use 'fill-gaps' command or main scraper with --since parameter instead.")
-    logger.info("Using Reddit API-based gap filler instead of deprecated Pushshift scraper")
+    logger.info("Starting Pushshift Historical Scraper")
     
     try:
-        # Use TargetedHistoricalScraper instead of deprecated PushshiftHistoricalScraper
-        logger.warning("PushshiftHistoricalScraper is deprecated. Using TargetedHistoricalScraper instead.")
-        logger.warning("For targeted historical scraping, use TargetedHistoricalScraper.run() or run_for_window().")
-        
-        # Create a TargetedHistoricalScraper instance
-        config_obj = load_config(config_path)
-        scraper = TargetedHistoricalScraper(config_obj)
+        # Create and run the scraper
+        scraper = PushshiftHistoricalScraper(config)
         asyncio.run(scraper.execute())
         
     except Exception as e:
-        logger.error(f"Error running historical scraper: {str(e)}")
+        logger.error(f"Error running Pushshift historical scraper: {str(e)}")
         if verbose:
             logger.exception(e)
         sys.exit(1)
@@ -713,78 +600,10 @@ def prometheus_server(
         logger.info("Prometheus server stopped")
 
 
-@app.command("fill-gaps")
-async def fill_gaps(
-    config: Annotated[str, typer.Option("--config", "-c", help="Path to configuration file")] = "config.yaml",
-    loglevel: Annotated[str, typer.Option("--loglevel", "-l", help="Logging level")] = "INFO",
-    min_duration: Annotated[int, typer.Option("--min-duration", help="Minimum gap duration in seconds to fill")] = 600,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Find and list gaps without filling them")] = False,
-) -> None:
-    """Find and fill time gaps in the submissions data."""
-    setup_logging(loglevel)
-    config_obj = Config.from_files(config)
-
-    if not config_obj.postgres.enabled:
-        logger.error("PostgreSQL is not enabled in configuration")
-        sys.exit(1)
-
-    conn = get_connection(config_obj.postgres)
-    if not conn:
-        logger.error("Connection failed! Check PostgreSQL credentials and connectivity.")
-        sys.exit(1)
-
-    try:
-        logger.info(f"Searching for gaps longer than {min_duration} seconds...")
-        gaps = query_for_gaps(conn, min_duration)
-        logger.info(f"Found {len(gaps)} gaps to potentially fill.")
-
-        if not gaps:
-            logger.info("No gaps found. Exiting.")
-            return
-
-        if dry_run:
-            logger.info("DRY RUN: The following gaps would be filled:")
-            print(json.dumps(gaps, indent=2))
-            return
-
-        logger.info("Starting gap filling process...")
-        # Sort gaps by duration in descending order (largest to smallest)
-        sorted_gaps = sorted(gaps, key=lambda x: x['gap_duration_seconds'], reverse=True)
-        logger.info(f"Processing {len(sorted_gaps)} gaps in descending order of duration")
-        
-        # Process each gap from largest to smallest
-        for i, gap in enumerate(sorted_gaps, 1):
-            subreddit = gap['subreddit']
-            start_str = gap['gap_start']
-            end_str = gap['gap_end']
-            duration = gap['gap_duration_seconds']
-            
-            logger.info(f"--- Filling gap {i}/{len(sorted_gaps)} for r/{subreddit} ({duration:.2f}s) ---")
-            logger.info(f"Window: {start_str} -> {end_str}")
-            logger.info(f"Gap rank: #{i} (duration: {duration:.0f} seconds)")
-
-            try:
-                start_date = datetime.fromisoformat(start_str)
-                end_date = datetime.fromisoformat(end_str)
-
-                scraper = TargetedHistoricalScraper(config_obj)
-                try:
-                    await scraper.initialize()
-                    records_added = await scraper.run_for_window(subreddit, start_date, end_date)
-                    logger.info(f"Completed filling gap for r/{subreddit}. Added {records_added} records.")
-                finally:
-                    # Ensure proper cleanup to prevent unclosed sessions
-                    await scraper.cleanup()
-
-            except Exception as e:
-                logger.error(f"Failed to fill gap for r/{subreddit}: {e}", exc_info=True)
-        
-        logger.info("Gap filling process finished.")
-
-    finally:
-        conn.close()
+def main() -> None:
+    """Entry point for the CLI."""
+    app()
 
 
 if __name__ == "__main__":
-    print("DEBUG: main function started.", flush=True)
-    app()
+    main()

@@ -4,9 +4,7 @@ import csv
 import logging
 import os
 from pathlib import Path
-from typing import List, Set, Optional
-
-from reddit_scraper.storage.data_sink import DataSink
+from typing import List, Set, Protocol, Optional
 
 import pandas as pd
 
@@ -15,10 +13,32 @@ from reddit_scraper.models.submission import SubmissionRecord
 logger = logging.getLogger(__name__)
 
 
+class DataSink(Protocol):
+    """Protocol defining the interface for data storage implementations."""
+    
+    def append(self, records: List[SubmissionRecord]) -> int:
+        """
+        Append records to the storage.
+        
+        Args:
+            records: List of submission records to append
+            
+        Returns:
+            Number of records successfully appended
+        """
+        ...
+    
+    def load_ids(self) -> Set[str]:
+        """
+        Load existing submission IDs from storage.
+        
+        Returns:
+            Set of submission IDs already in storage
+        """
+        ...
 
 
-
-class CsvSink(DataSink):
+class CsvSink:
     """CSV file implementation of the DataSink interface."""
     
     # Column order matching the PRD specification
@@ -80,26 +100,8 @@ class CsvSink(DataSink):
                 # Remove any duplicates based on ID
                 df = df.drop_duplicates(subset=["id"], keep="first")
             
-            # To preserve the numeric `created_utc` field, we create a temporary column for sorting.
-            # This avoids the issue of converting the original column to datetime objects and then saving
-            # them as strings, which caused data corruption on subsequent runs.
-            df_to_sort = df.copy()
-            try:
-                # Use a temporary column for sorting to avoid modifying the original 'created_utc' data.
-                df_to_sort['_sort_utc_'] = pd.to_datetime(df_to_sort['created_utc'], errors='coerce', unit='s')
-                
-                # For rows that failed conversion (i.e., are already datetime strings), parse them directly.
-                mask = df_to_sort['_sort_utc_'].isna()
-                if mask.any():
-                    df_to_sort.loc[mask, '_sort_utc_'] = pd.to_datetime(df_to_sort.loc[mask, 'created_utc'], errors='coerce')
-                
-                # Sort by the new temporary datetime column and then drop it.
-                df_to_sort = df_to_sort.sort_values(by="_sort_utc_", ascending=True)
-                df = df_to_sort.drop(columns=['_sort_utc_'])
-
-            except Exception as e:
-                logger.warning(f"Could not normalize created_utc for sorting: {e}. Skipping sort.")
-                # If normalization fails, we proceed with the unsorted but deduplicated data.
+            # Sort by created_utc timestamp (chronological order)
+            df = df.sort_values(by="created_utc", ascending=True)
             
             # Write to CSV (overwrite mode since we're rewriting the entire file)
             df.to_csv(
@@ -142,7 +144,7 @@ class CsvSink(DataSink):
             return set()
 
 
-class ParquetSink(DataSink):
+class ParquetSink:
     """
     Placeholder for future Parquet storage implementation.
     

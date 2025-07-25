@@ -4,7 +4,7 @@ from datetime import timedelta
 
 # Load the data
 print("Loading data...")
-df = pd.read_csv('data/reddit_finance.csv')
+df = pd.read_csv('../data/reddit_finance.csv')
 print(f"Total records: {len(df)}")
 
 # Convert timestamps to datetime

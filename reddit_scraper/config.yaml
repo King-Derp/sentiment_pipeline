@@ -15,8 +15,8 @@ subreddits:
 # Historic search window in days
 window_days: 30
 
-# Path to CSV storage file
-csv_path: data/reddit_finance.csv
+# Path to CSV storage file (using Docker-mounted data directory)
+csv_path: /app/data/reddit_finance.csv
 
 # Whether to perform initial backfill on startup
 initial_backfill: true
