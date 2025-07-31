@@ -65,10 +65,10 @@ services:
       - PORT=${PORT:-8001}
       - WORKERS=${WORKERS:-1}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - DEBUG=${DEBUG:-false}
+      - DEBUG=${DEBUG:-true}
       
       # Security Settings
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,sentiment_analyzer,sentiment_analyzer_api}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-true}
       - CORS_ALLOW_METHODS=${CORS_ALLOW_METHODS:-GET,POST,PUT,DELETE,OPTIONS}
@@ -108,6 +108,44 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  dashboard_service:
+    build:
+      context: .
+      dockerfile: ./dashboard_service/Dockerfile
+    container_name: dashboard_service_app
+    ports:
+      - "${DASHBOARD_PORT:-8503}:8501"
+    depends_on:
+      sentiment_analyzer:
+        condition: service_healthy
+    environment:
+      # Dashboard Configuration
+      - SENTIMENT_API_BASE_URL=http://sentiment_analyzer:8001
+      - SENTIMENT_API_TIMEOUT=30
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+    networks:
+      - sentiment_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
 volumes:
   timescaledb_data:

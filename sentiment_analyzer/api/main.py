@@ -184,9 +184,16 @@ def create_app() -> FastAPI:
     )
     
     # Add trusted host middleware for security
+    # Allow all hosts in debug mode or container environments
+    allowed_hosts = ["*"] if settings.DEBUG else settings.ALLOWED_HOSTS
+    # Always allow container hostnames for inter-service communication
+    if isinstance(allowed_hosts, list) and "*" not in allowed_hosts:
+        container_hosts = ["sentiment_analyzer", "sentiment_analyzer_api", "localhost", "127.0.0.1", "0.0.0.0"]
+        allowed_hosts = list(set(allowed_hosts + container_hosts))
+    
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=settings.ALLOWED_HOSTS if not settings.DEBUG else ["*"]
+        allowed_hosts=allowed_hosts
     )
     
     # Include API routers

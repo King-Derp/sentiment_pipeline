@@ -274,7 +274,7 @@ async def get_sentiment_events(
                 confidence=event.confidence,
                 processed_at=event.processed_at,
                 model_version=event.model_version,
-                raw_text=event.cleaned_text  # Use cleaned_text as raw_text for API
+                raw_text=event.raw_text  # Use raw_text from ORM model
             )
             for event in events
         ]
