@@ -1,7 +1,7 @@
 # TimescaleDB Integration Guide for Scrapers
 
-**Version:** 1.0
-**Date:** 2025-05-23
+**Version:** 1.1
+**Date:** 2025-07-28
 
 This document provides guidelines and best practices for connecting scraper services to the TimescaleDB instance within the Sentiment Pipeline project.
 
@@ -72,7 +72,7 @@ DATABASE_URL_ASYNC = f"postgresql+asyncpg://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{P
 
 ## 4. Database Interaction
 
-*   **SQLAlchemy Models:** Scrapers utilize the `RawEventORM` model (typically located in `common/models/`) which maps to the `raw_events` table. The structure of `RawEventORM` and the `raw_events` table is defined and managed by **Alembic**. Scrapers **DO NOT** create tables using `metadata.create_all()`. For full details on `RawEventORM` and the `raw_events` schema, see [ARCHITECTURE.md](../ARCHITECTURE.md).
+*   **SQLAlchemy Models:** Scrapers utilize the `RawEventORM` model (located in `reddit_scraper/reddit_scraper/models/submission.py`) which maps to the `raw_events` table. The structure of `RawEventORM` and the `raw_events` table is defined and managed by **Alembic**. Scrapers **DO NOT** create tables using `metadata.create_all()`. For full details on `RawEventORM` and the `raw_events` schema, see [ARCHITECTURE.md](../ARCHITECTURE.md).
 *   **Data Sink Logic:** Scrapers should use a data sink (e.g., `SQLAlchemyPostgresSink`) that employs the SQLAlchemy engine to insert `RawEventDTO` data into the `raw_events` table. The role and implementation details of such sinks are described in [ARCHITECTURE.md](../ARCHITECTURE.md).
 *   **Connection Pooling:** SQLAlchemy engines manage connection pooling by default, which is generally sufficient for most scraper workloads.
 

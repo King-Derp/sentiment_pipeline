@@ -34,7 +34,7 @@ Build a Python 3.10+ tool that continuously harvests submission data (including 
 
 ### 5. Target Subreddits
 
-wallstreetbets, stocks, investing, StockMarket, options, finance, UKInvesting
+wallstreetbets, stocks, investing, StockMarket, options, finance, UKInvesting, Banking, CryptoCurrency
 
 ### 6. Functional Requirements
 
@@ -91,7 +91,7 @@ The primary data model for storage in TimescaleDB is `RawEventORM`, as defined i
 | `event_id`          | `UUID`       | Primary Key, auto-generated.                                            |
 | `event_type`        | `String`     | E.g., "reddit_submission".                                              |
 | `source`            | `String`     | E.g., "reddit".                                                       |
-| `source_event_id`   | `String`     | Original Reddit submission ID (e.g., base36 ID like "t3_xxxxxx").       |
+| `source_id`         | `String`     | Original Reddit submission ID (e.g., base36 ID like "abc123", without "t3_" prefix). |
 | `occurred_at`       | `DateTime`   | Timestamp of the event (submission creation time). Partitioning key.    |
 | `recorded_at`       | `DateTime`   | Timestamp when the event was recorded by the system. Auto-set.          |
 | `data`              | `JSONB`      | Original Reddit submission data (title, selftext, author, score, etc.). |
@@ -130,11 +130,11 @@ The scraper will implement a dual storage strategy as outlined in `ARCHITECTURE.
 
 2.  **Secondary Storage: CSV Files**
     *   In addition to TimescaleDB, all scraped `RawEventDTOs` will also be appended to local CSV files.
-    *   **Path**: `data/raw/reddit_scraper/<subreddit_name>/<YYYY-MM-DD>.csv` (relative to project root, configurable via `csv_path_root` in `config.yaml`).
-    *   **Format**: Standard CSV. Each row represents a `RawEventDTO`. The `data` field of the DTO (containing the original submission) will be stored as a JSON string within a CSV column. Other `RawEventDTO` fields (`event_id`, `event_type`, `source`, `source_event_id`, `occurred_at`, `metadata`) will be distinct columns.
+    *   **Path**: **Current Implementation**: Single consolidated file at `data/reddit_finance.csv` (local) or `/app/data/reddit_finance.csv` (Docker), configurable via `csv_path` in `config.yaml`. *Note: Original design specified per-subreddit/per-date structure, but implementation uses single file for simplicity.*
+    *   **Format**: Standard CSV. Each row represents a `RawEventDTO`. The `payload` field of the DTO (containing the original submission) will be stored as a JSON string within a CSV column. Other `RawEventDTO` fields (`event_id`, `event_type`, `source`, `source_id`, `occurred_at`, `ingested_at`) will be distinct columns.
     *   **Mode**: Append-only (`a+`).
     *   **Purpose**: Provides a local backup, facilitates quick data inspection, and ensures data capture resilience if the database is temporarily unavailable.
-    *   The scraper will manage CSV file creation (including subdirectories if they don't exist) and appending data.
+    *   **Timestamp Fix**: The implementation correctly preserves Unix timestamps as numeric values (not date strings) in the `created_utc` field within the payload.
     *   Primary deduplication is handled at the database level. CSVs are a raw log of DTOs processed.
 
 #### 6.8 CLI / UX

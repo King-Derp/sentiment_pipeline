@@ -1,6 +1,7 @@
 # Reddit Finance Scraper Configuration
 
 # List of subreddits to scrape
+# Note: Banking and CryptoCurrency were added to expand coverage beyond the original 7 finance subreddits
 subreddits:
   - wallstreetbets
   - stocks
@@ -9,13 +10,16 @@ subreddits:
   - options
   - finance
   - UKInvesting
-  - Banking
-  - CryptoCurrency
+  - Banking          # Added for broader banking/finance coverage
+  - CryptoCurrency   # Added for crypto finance discussions
 
 # Historic search window in days
 window_days: 30
 
-# Path to CSV storage file (using Docker-mounted data directory)
+# Path to CSV storage file
+# Docker: /app/data/reddit_finance.csv (mounted volume)
+# Local: data/reddit_finance.csv (relative to project root)
+# Note: Single consolidated file (not per-subreddit/per-date as originally designed)
 csv_path: /app/data/reddit_finance.csv
 
 # Whether to perform initial backfill on startup
@@ -53,14 +57,16 @@ monitoring:
     max_disk_usage_percent: 90
 
 # PostgreSQL settings
+# Primary storage backend - writes to TimescaleDB raw_events hypertable
 postgres:
-  # Enable PostgreSQL storage
+  # Enable PostgreSQL storage (primary storage backend)
   enabled: true
   # PostgreSQL connection settings (can be overridden by environment variables)
+  # These settings work with the shared TimescaleDB instance used by sentiment_analyzer
   host: timescaledb
   port: 5432
   dbname: sentiment_pipeline_db
   user: test_user
   password: ${PG_PASSWORD}  # Use environment variable instead of hardcoded password
-  # SQLAlchemy settings
+  # SQLAlchemy settings - uses SQLAlchemyPostgresSink for robust database operations
   use_sqlalchemy: true

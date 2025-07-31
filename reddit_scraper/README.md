@@ -29,6 +29,8 @@ This tool collects Reddit submissions and comments from configured finance-relat
 - options
 - finance
 - UKInvesting
+- Banking
+- CryptoCurrency
 
 ## Setup
 
@@ -203,19 +205,62 @@ The `config.yaml` file contains the following settings:
 
 For a comprehensive understanding of how this scraper fits into the overall project, including monitoring and alerting strategies, please refer to the main project [ARCHITECTURE.md](../../ARCHITECTURE.md) and [scraper_implementation_rule.md](../../scraper_implementation_rule.md).
 
-## Data Flow, Storage, and Database Interaction
+## Data Flow, Storage, and Database Integration
 
-For a comprehensive understanding of how this scraper fits into the overall project, including:
-*   The detailed data flow from scraping to storage.
-*   The `RawEventDTO` structure.
-*   The `raw_events` table schema in TimescaleDB.
-*   The role of `SQLAlchemyPostgresSink` and `RawEventORM`.
-*   Database schema management with Alembic.
-*   Primary (TimescaleDB) and secondary (CSV) storage strategies.
+### Overview
 
-Please refer to the main project [ARCHITECTURE.md](../../ARCHITECTURE.md) and [scraper_implementation_rule.md](../../scraper_implementation_rule.md).
+This scraper integrates with the larger Sentiment Pipeline project by:
+1. **Collecting** Reddit submissions from configured finance subreddits
+2. **Converting** them to `RawEventDTO` objects with standardized structure
+3. **Storing** them in both TimescaleDB (primary) and CSV files (secondary)
+4. **Enabling** downstream processing by the sentiment_analyzer service
 
-This scraper adheres to those architectural patterns, using `SQLAlchemyPostgresSink` to write `RawEventDTO` data to the `raw_events` table.
+### Data Models
+
+#### RawEventDTO Structure
+The scraper produces `RawEventDTO` objects with these key fields:
+- `event_id`: UUID primary key
+- `event_type`: Always "reddit_submission" for this scraper
+- `source`: Always "reddit"
+- `source_id`: Reddit's base36 submission ID (e.g., "abc123")
+- `occurred_at`: Submission creation timestamp
+- `payload`: Complete Reddit submission data (JSON)
+- `content`: **Computed field** that extracts text for sentiment analysis from `payload.title` and `payload.selftext`
+
+#### Database Storage (Primary)
+- Uses `SQLAlchemyPostgresSink` to write to TimescaleDB `raw_events` hypertable
+- Leverages `RawEventORM` model for database operations
+- Handles deduplication via `ON CONFLICT DO NOTHING`
+- Supports batch processing for performance
+
+#### CSV Storage (Secondary)
+- **Current Implementation**: Single CSV file at `/app/data/reddit_finance.csv` (Docker) or `data/reddit_finance.csv` (local)
+- **Format**: Each row represents a `RawEventDTO` with `payload` as JSON string
+- **Purpose**: Local backup, quick inspection, resilience during DB outages
+- **Note**: The PRD originally specified per-subreddit/per-date files, but current implementation uses a single consolidated file
+
+### Integration with Sentiment Analyzer
+
+The sentiment_analyzer service processes events from the `raw_events` table:
+1. **Event Claiming**: Uses `processed` boolean field (not `processing_status` string as mentioned in some older docs)
+2. **Content Extraction**: Relies on the `RawEventDTO.content` computed field for text analysis
+3. **Result Storage**: Saves sentiment results to `sentiment_results` table with reference to original event
+
+### Database Schema
+
+The scraper expects the following `raw_events` table structure (managed via Alembic migrations):
+- `id`: Internal database ID (auto-increment)
+- `event_id`: UUID (matches `RawEventDTO.event_id`)
+- `event_type`: String ("reddit_submission")
+- `source`: String ("reddit")
+- `source_id`: String (Reddit submission ID)
+- `occurred_at`: Timestamp (when submission was created)
+- `ingested_at`: Timestamp (when scraper processed it)
+- `processed`: Boolean (for sentiment analyzer claiming)
+- `processed_at`: Timestamp (when sentiment analysis completed)
+- `payload`: JSONB (complete Reddit submission data)
+
+**Important**: The scraper does not create or modify database schema - it relies on externally managed Alembic migrations.
 
 ## Development
 

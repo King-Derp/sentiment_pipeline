@@ -1,7 +1,7 @@
 # Sentiment Pipeline Architecture
 
-**Version:** 2.0
-**Date:** 2025-07-06
+**Version:** 2.1
+**Date:** 2025-07-28
 
 ## 1. Introduction
 
@@ -113,18 +113,19 @@ Schema management is handled by **Alembic**. The schemas below reflect the final
 ### 4.3. `sentiment_metrics` Table
 
 *   **Purpose:** Stores aggregated sentiment metrics over time buckets for efficient reporting.
-*   **Hypertable:** Partitioned by `time_bucket`.
+*   **Hypertable:** Partitioned by `metric_timestamp` (aliased as `time_bucket` in ORM).
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `time_bucket` | TIMESTAMPTZ | PK, NOT NULL | Start of the time bucket for aggregation. |
-| `source` | TEXT | PK, NOT NULL | Origin of the data. |
-| `source_id` | TEXT | PK, NOT NULL | Secondary identifier from the source. |
-| `label` | TEXT | PK, NOT NULL | Categorical sentiment label. |
-| `count` | INTEGER | NOT NULL | Number of results in this bucket and category. |
-| `avg_score` | FLOAT | NOT NULL | Average sentiment score for this bucket. |
+| `time_bucket` | TIMESTAMPTZ | PK, NOT NULL | Start of the time bucket for aggregation (ORM alias for metric_timestamp). |
+| `source` | TEXT | PK, NOT NULL | Origin of the data (e.g., 'reddit'). |
+| `source_id` | TEXT | PK, NOT NULL | Secondary identifier from the source (e.g., subreddit name). |
+| `label` | TEXT | PK, NOT NULL | Categorical sentiment label (e.g., 'positive', 'negative'). |
+| `count` | INTEGER | NOT NULL | Number of sentiment results in this bucket and category. |
+| `avg_score` | FLOAT | NOT NULL | Average sentiment score for this bucket and category. |
 
 *   **Composite Primary Key:** `(time_bucket, source, source_id, label)`
+*   **Note:** The actual partition column is `metric_timestamp`, with `time_bucket` serving as an ORM-compatible alias.
 
 ### 4.4. `dead_letter_events` Table
 
