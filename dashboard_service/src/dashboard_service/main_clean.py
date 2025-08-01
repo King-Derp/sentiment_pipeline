@@ -52,117 +52,96 @@ def initialize_session_state() -> None:
         st.session_state.fetch_mode = "Comprehensive"
     
     if 'fetch_limit' not in st.session_state:
-        st.session_state.fetch_limit = 10000
+        st.session_state.fetch_limit = 20000
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def fetch_events_data(
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
     source: Optional[str] = None,
     sentiment_label: Optional[str] = None,
-    limit: int = 10000
+    limit: int = 20000
 ) -> List[Dict[str, Any]]:
     """Fetch events data with unlimited pagination support."""
     try:
-        # DISABLE CACHE for debugging - ensure fresh data every time
-        logger.info(f"FETCHING FRESH DATA - NO CACHE")
-        logger.info(f"Date range: {start_time} to {end_time}")
-        logger.info(f"Source: {source}, Sentiment: {sentiment_label}, Limit: {limit}")
-        logger.info(f"Fetch mode: {st.session_state.fetch_mode}")
-        
         client = get_api_client()
-        logger.info(f"Fetching events: start={start_time}, end={end_time}, source={source}, sentiment={sentiment_label}, mode={st.session_state.fetch_mode}")
+        logger.info(f"Fetching events: start={start_time}, end={end_time}, source={source}, sentiment={sentiment_label}")
         
         all_events = []
         
-        # Use unlimited fetching for comprehensive and unlimited modes
-        if st.session_state.fetch_mode in ["Comprehensive", "Unlimited"]:
-            mode_name = "Comprehensive" if st.session_state.fetch_mode == "Comprehensive" else "ALL available"
-            with st.spinner(f'🚀 Fetching {mode_name} events in date range...'):
+        # Use unlimited fetching for comprehensive mode
+        if st.session_state.fetch_mode == "Unlimited":
+            with st.spinner('🚀 Fetching ALL available events...'):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                # Ensure we have valid date range
-                if not start_time or not end_time:
-                    st.error("Please select a valid date range for comprehensive fetching")
-                    return []
-                
-                # Log the actual date range being used
-                logger.info(f"Fetching events for date range: {start_time} to {end_time}")
-                st.info(f"📅 Fetching events from {start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')}")
-                
-                # Time-based chunking for large date ranges
-                time_diff = end_time - start_time
-                days_diff = time_diff.days
-                
-                # More aggressive chunking for better coverage
-                if days_diff <= 1:
-                    chunk_count = 1  # Single day
-                elif days_diff <= 7:
-                    chunk_count = days_diff  # Daily chunks
-                elif days_diff <= 30:
-                    chunk_count = min(15, days_diff // 2)  # 2-day chunks
-                else:
-                    chunk_count = min(30, days_diff // 7)  # Weekly chunks
-                
-                chunk_count = max(1, chunk_count)
-                chunk_duration = time_diff / chunk_count
-                
-                logger.info(f"Using {chunk_count} chunks for {days_diff} days ({chunk_duration} per chunk)")
-                
-                for i in range(chunk_count):
-                    chunk_start = start_time + (chunk_duration * i)
-                    chunk_end = start_time + (chunk_duration * (i + 1))
+                if start_time and end_time:
+                    # Time-based chunking for large date ranges
+                    time_diff = end_time - start_time
+                    days_diff = time_diff.days
                     
-                    progress = (i + 1) / chunk_count
-                    progress_bar.progress(progress)
-                    status_text.text(f"Fetching chunk {i+1}/{chunk_count} ({len(all_events):,} events loaded)")
+                    # Adaptive chunking
+                    if days_diff <= 7:
+                        chunk_count = max(1, days_diff)
+                    elif days_diff <= 30:
+                        chunk_count = min(10, days_diff // 3)
+                    else:
+                        chunk_count = min(20, days_diff // 7)
                     
-                    # Log chunk details for debugging
-                    logger.info(f"Processing chunk {i+1}/{chunk_count}: {chunk_start} to {chunk_end}")
+                    chunk_count = max(1, chunk_count)
+                    chunk_duration = time_diff / chunk_count
                     
-                    # Fetch all events in this chunk with proper pagination
-                    chunk_events = []
-                    cursor = None
-                    page_limit = 10000
-                    max_pages = 100  # Increased for unlimited mode
-                    
-                    for page in range(max_pages):
-                        try:
-                            page_events = client.get_events(
-                                start_time=chunk_start,
-                                end_time=chunk_end,
-                                source=source,
-                                sentiment_label=sentiment_label,
-                                limit=page_limit,
-                                cursor=cursor
-                            )
-                            
-                            if not page_events:
+                    for i in range(chunk_count):
+                        chunk_start = start_time + (chunk_duration * i)
+                        chunk_end = start_time + (chunk_duration * (i + 1))
+                        
+                        progress = (i + 1) / chunk_count
+                        progress_bar.progress(progress)
+                        status_text.text(f"Fetching chunk {i+1}/{chunk_count} ({len(all_events):,} events loaded)")
+                        
+                        # Fetch all events in this chunk with proper pagination
+                        chunk_events = []
+                        cursor = None
+                        page_limit = 10000
+                        max_pages = 50
+                        
+                        for page in range(max_pages):
+                            try:
+                                page_events = client.get_events(
+                                    start_time=chunk_start,
+                                    end_time=chunk_end,
+                                    source=source,
+                                    sentiment_label=sentiment_label,
+                                    limit=page_limit,
+                                    cursor=cursor
+                                )
+                                
+                                if not page_events:
+                                    break
+                                
+                                chunk_events.extend(page_events)
+                                
+                                if len(page_events) < page_limit:
+                                    break
+                                
+                                # Generate cursor for next page
+                                last_event = page_events[-1]
+                                import base64
+                                import json
+                                cursor_data = {
+                                    "timestamp": last_event.processed_at.isoformat(),
+                                    "id": last_event.id
+                                }
+                                cursor_json = json.dumps(cursor_data)
+                                cursor = base64.b64encode(cursor_json.encode()).decode()
+                                
+                            except Exception as e:
+                                logger.warning(f"Error in pagination: {str(e)}")
                                 break
-                            
-                            chunk_events.extend(page_events)
-                            
-                            if len(page_events) < page_limit:
-                                break
-                            
-                            # Generate cursor for next page
-                            last_event = page_events[-1]
-                            import base64
-                            import json
-                            cursor_data = {
-                                "timestamp": last_event.occurred_at.isoformat(),
-                                "id": last_event.id
-                            }
-                            cursor_json = json.dumps(cursor_data)
-                            cursor = base64.b64encode(cursor_json.encode()).decode()
-                            
-                        except Exception as e:
-                            logger.warning(f"Error in pagination: {str(e)}")
-                            break
-                    
-                    all_events.extend(chunk_events)
-                    logger.info(f"Chunk {i+1}: {len(chunk_events)} events, total: {len(all_events)}")
+                        
+                        all_events.extend(chunk_events)
+                        logger.info(f"Chunk {i+1}: {len(chunk_events)} events, total: {len(all_events)}")
                 
                 progress_bar.empty()
                 status_text.empty()
@@ -182,7 +161,7 @@ def fetch_events_data(
                 end_time=end_time,
                 source=source,
                 sentiment_label=sentiment_label,
-                limit=min(limit, 10000)  # Respect API limit
+                limit=limit
             )
         
         # Convert to dict format
@@ -201,40 +180,6 @@ def fetch_events_data(
             })
         
         logger.info(f"Final result: {len(events_data)} events")
-        
-        # Log date range of actual data for debugging
-        if events_data:
-            df_temp = pd.DataFrame(events_data)
-            df_temp['occurred_at'] = pd.to_datetime(df_temp['occurred_at'])
-            actual_start = df_temp['occurred_at'].min()
-            actual_end = df_temp['occurred_at'].max()
-            logger.info(f"Actual data range: {actual_start} to {actual_end}")
-            
-            # Check if data is within expected range
-            if start_time and end_time:
-                logger.info(f"Expected range: {start_time} to {end_time}")
-                
-                # Handle timezone comparison safely
-                try:
-                    # Convert to same timezone for comparison
-                    if actual_start.tz is not None:
-                        # Data is timezone-aware, make filter dates timezone-aware
-                        start_time_tz = start_time.replace(tzinfo=actual_start.tz) if start_time.tzinfo is None else start_time
-                        end_time_tz = end_time.replace(tzinfo=actual_end.tz) if end_time.tzinfo is None else end_time
-                    else:
-                        # Data is timezone-naive, make filter dates timezone-naive
-                        start_time_tz = start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
-                        end_time_tz = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
-                        actual_start = actual_start.replace(tzinfo=None)
-                        actual_end = actual_end.replace(tzinfo=None)
-                    
-                    if actual_start < start_time_tz or actual_end > end_time_tz:
-                        logger.warning(f"Data outside expected range! API filtering may not be working.")
-                    else:
-                        logger.info(f"Data is within expected range ✓")
-                except Exception as e:
-                    logger.warning(f"Could not compare date ranges due to timezone issue: {e}")
-        
         return events_data
         
     except Exception as e:
@@ -269,11 +214,11 @@ def render_sidebar() -> Dict[str, Any]:
         limit = st.sidebar.slider("Event Limit", 1000, 10000, 5000, 1000)
         st.session_state.fetch_limit = limit
     elif fetch_mode == "Comprehensive":
-        st.sidebar.info("📊 Comprehensive mode uses chunking to fetch more than 10k events")
-        st.session_state.fetch_limit = 10000  # Use API limit for chunking
+        limit = st.sidebar.slider("Target Events", 10000, 50000, 20000, 5000)
+        st.session_state.fetch_limit = limit
     else:
         st.sidebar.info("🚀 Unlimited mode fetches ALL events in date range")
-        st.session_state.fetch_limit = 10000  # Use API limit for chunking
+        st.session_state.fetch_limit = 999999
     
     # Filters
     st.sidebar.markdown("### 🔍 Filters")
@@ -437,14 +382,6 @@ def main() -> None:
     # Sidebar filters
     filters = render_sidebar()
     
-    # Debug: Show selected date range
-    st.info(f"📅 Selected Date Range: {filters['start_time'].strftime('%Y-%m-%d')} to {filters['end_time'].strftime('%Y-%m-%d')}")
-    
-    # Add refresh button for debugging
-    if st.button("🔄 Refresh Data (No Cache)"):
-        st.cache_data.clear()
-        st.rerun()
-    
     # Fetch data
     with st.spinner("Loading data..."):
         events_data = fetch_events_data(
@@ -454,14 +391,6 @@ def main() -> None:
             sentiment_label=filters["sentiment_label"],
             limit=st.session_state.fetch_limit
         )
-    
-    # Debug: Show actual data date range
-    if events_data:
-        df_temp = pd.DataFrame(events_data)
-        df_temp['occurred_at'] = pd.to_datetime(df_temp['occurred_at'])
-        actual_start = df_temp['occurred_at'].min()
-        actual_end = df_temp['occurred_at'].max()
-        st.info(f"📊 Actual Data Range: {actual_start.strftime('%Y-%m-%d')} to {actual_end.strftime('%Y-%m-%d')} ({len(events_data):,} events)")
     
     # Overview metrics
     st.markdown("## 📈 Overview")

@@ -184,7 +184,7 @@ class SentimentAPIClient:
         Raises:
             APIError: If request fails
         """
-        params = {"limit": min(limit, 1000)}
+        params = {"limit": limit}
         
         if start_time:
             params["start_time"] = start_time.isoformat()

@@ -193,7 +193,7 @@ async def get_sentiment_events(
     source: Optional[str] = Query(None, description="Filter by event source"),
     source_id: Optional[str] = Query(None, description="Filter by source ID"),
     sentiment_label: Optional[str] = Query(None, description="Filter by sentiment label"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
+    limit: int = Query(100, ge=1, le=10000, description="Maximum number of results"),
     cursor: Optional[str] = Query(None, description="Pagination cursor")
 ) -> List[SentimentResultDTO]:
     """
@@ -223,10 +223,10 @@ async def get_sentiment_events(
         conditions = []
         
         if start_time:
-            conditions.append(SentimentResultORM.processed_at >= start_time)
+            conditions.append(SentimentResultORM.occurred_at >= start_time)
         
         if end_time:
-            conditions.append(SentimentResultORM.processed_at <= end_time)
+            conditions.append(SentimentResultORM.occurred_at <= end_time)
             
         if source:
             conditions.append(SentimentResultORM.source == source)
@@ -241,9 +241,9 @@ async def get_sentiment_events(
         if cursor:
             cursor_time, cursor_id = decode_cursor(cursor)
             conditions.append(
-                (SentimentResultORM.processed_at < cursor_time) |
+                (SentimentResultORM.occurred_at < cursor_time) |
                 (
-                    (SentimentResultORM.processed_at == cursor_time) &
+                    (SentimentResultORM.occurred_at == cursor_time) &
                     (SentimentResultORM.id < cursor_id)
                 )
             )
@@ -251,8 +251,8 @@ async def get_sentiment_events(
         if conditions:
             query = query.where(and_(*conditions))
         
-        # Order by processed_at DESC, id DESC for consistent pagination
-        query = query.order_by(desc(SentimentResultORM.processed_at), desc(SentimentResultORM.id))
+        # Order by occurred_at DESC, id DESC for consistent pagination
+        query = query.order_by(desc(SentimentResultORM.occurred_at), desc(SentimentResultORM.id))
         
         # Apply limit
         query = query.limit(limit)
@@ -296,7 +296,7 @@ async def get_sentiment_metrics(
     source: Optional[str] = Query(None, description="Filter by event source"),
     source_id: Optional[str] = Query(None, description="Filter by source ID"),
     sentiment_label: Optional[str] = Query(None, description="Filter by sentiment label"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
+    limit: int = Query(100, ge=1, le=10000, description="Maximum number of results"),
     cursor: Optional[str] = Query(None, description="Pagination cursor")
 ) -> List[SentimentMetricDTO]:
     """
