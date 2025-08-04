@@ -538,7 +538,9 @@ def main() -> None:
         
         # Recent events sample
         with st.expander("📋 Recent Events Sample", expanded=False):
-            sample_df = df.head(100)[['occurred_at', 'source', 'sentiment_label', 'sentiment_score', 'raw_text']]
+            # Sort by occurred_at descending to show most recent events first
+            recent_df = df.sort_values('occurred_at', ascending=False).head(100)
+            sample_df = recent_df[['occurred_at', 'source', 'sentiment_label', 'sentiment_score', 'raw_text']]
             sample_df['occurred_at'] = sample_df['occurred_at'].dt.strftime('%Y-%m-%d %H:%M')
             sample_df['raw_text'] = sample_df['raw_text'].str[:100] + '...'
             st.dataframe(sample_df, use_container_width=True)

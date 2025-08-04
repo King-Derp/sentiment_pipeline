@@ -14,7 +14,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc, asc
+from sqlalchemy import select, and_, desc, asc, func
 from sqlalchemy.orm import selectinload
 
 from sentiment_analyzer.models.dtos import (
@@ -296,8 +296,7 @@ async def get_sentiment_metrics(
     source: Optional[str] = Query(None, description="Filter by event source"),
     source_id: Optional[str] = Query(None, description="Filter by source ID"),
     sentiment_label: Optional[str] = Query(None, description="Filter by sentiment label"),
-    limit: int = Query(100, ge=1, le=10000, description="Maximum number of results"),
-    cursor: Optional[str] = Query(None, description="Pagination cursor")
+    limit: int = Query(1000, ge=1, le=10000, description="Maximum number of results"),
 ) -> List[SentimentMetricDTO]:
     """
     Retrieve aggregated sentiment metrics with filtering and pagination.
@@ -311,78 +310,78 @@ async def get_sentiment_metrics(
         source_id: Filter by source ID
         sentiment_label: Filter by sentiment label
         limit: Maximum number of results
-        cursor: Pagination cursor
         
     Returns:
-        List[SentimentMetricDTO]: List of sentiment metrics
+        List[SentimentMetricDTO]: List of aggregated sentiment metrics
         
     Raises:
         HTTPException: If query fails
     """
     try:
-        # Build query
-        query = select(SentimentMetricORM)
+        # Validate time_bucket_size
+        if time_bucket_size not in ["hour", "day", "week", "month"]:
+            raise HTTPException(status_code=400, detail="Invalid time_bucket_size. Use 'hour', 'day', 'week', or 'month'.")
+
+        # Define columns for selection and grouping
+        time_bucket = func.date_trunc(time_bucket_size, SentimentResultORM.occurred_at).label("time_bucket")
         
+        query = select(
+            time_bucket,
+            SentimentResultORM.source,
+            SentimentResultORM.sentiment_label.label("label"),
+            func.count(SentimentResultORM.id).label("count"),
+            func.avg(SentimentResultORM.sentiment_score).label("avg_score"),
+        ).select_from(SentimentResultORM)
+
         # Apply filters
         conditions = []
-        
         if start_time:
-            conditions.append(SentimentMetricORM.metric_timestamp >= start_time)
-        
+            conditions.append(SentimentResultORM.occurred_at >= start_time)
         if end_time:
-            conditions.append(SentimentMetricORM.metric_timestamp <= end_time)
-            
+            conditions.append(SentimentResultORM.occurred_at <= end_time)
         if source:
-            conditions.append(SentimentMetricORM.raw_event_source == source)
-            
+            conditions.append(SentimentResultORM.source == source)
         if source_id:
-            conditions.append(SentimentMetricORM.raw_event_source_id == source_id)
-            
+            conditions.append(SentimentResultORM.source_id == source_id)
         if sentiment_label:
-            conditions.append(SentimentMetricORM.sentiment_label == sentiment_label)
-        
-        # Handle cursor-based pagination
-        if cursor:
-            cursor_time, cursor_id = decode_cursor(cursor)
-            conditions.append(
-                (SentimentMetricORM.metric_timestamp < cursor_time) |
-                (
-                    (SentimentMetricORM.metric_timestamp == cursor_time) &
-                    (SentimentMetricORM.id < cursor_id)
-                )
-            )
-        
+            conditions.append(SentimentResultORM.sentiment_label == sentiment_label)
+            
         if conditions:
             query = query.where(and_(*conditions))
         
-        # Order by metric_timestamp DESC, id DESC for consistent pagination
-        query = query.order_by(desc(SentimentMetricORM.metric_timestamp), desc(SentimentMetricORM.id))
+        # Group by time bucket, source, and label
+        query = query.group_by(
+            time_bucket,
+            SentimentResultORM.source,
+            SentimentResultORM.sentiment_label
+        )
+        
+        # Order by time bucket for chronological results
+        query = query.order_by(desc(time_bucket))
         
         # Apply limit
         query = query.limit(limit)
         
         # Execute query
         result = await session.execute(query)
-        metrics = result.scalars().all()
+        aggregated_metrics = result.mappings().all()
         
-        # Convert to DTOs - need to aggregate by time bucket, source, source_id, label
-        # For now, return raw metrics and let client handle aggregation
-        # TODO: Implement proper time-bucket aggregation in the query
+        # Convert to DTOs
         metric_dtos = [
             SentimentMetricDTO(
-                time_bucket=metric.metric_timestamp,
-                source=metric.raw_event_source,
-                source_id=metric.raw_event_source_id or "",
-                label=metric.sentiment_label,
-                count=int(metric.metric_value) if metric.metric_name == "event_count" else 1,
-                avg_score=metric.metric_value if metric.metric_name == "confidence_sum" else 0.0
+                time_bucket=row.time_bucket,
+                source=row.source,
+                source_id="", # source_id is not grouped, default to empty
+                label=row.label,
+                count=row.count,
+                avg_score=row.avg_score or 0.0
             )
-            for metric in metrics
+            for row in aggregated_metrics
         ]
         
-        logger.info(f"Retrieved {len(metric_dtos)} sentiment metrics")
+        logger.info(f"Retrieved {len(metric_dtos)} aggregated sentiment metrics")
         return metric_dtos
         
     except Exception as e:
-        logger.error(f"Error retrieving sentiment metrics: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+        logger.error(f"Error retrieving aggregated sentiment metrics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve aggregated metrics: {str(e)}")

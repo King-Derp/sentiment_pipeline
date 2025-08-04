@@ -299,7 +299,7 @@ class SentimentAPIClient:
             APIError: If request fails
         """
         request_data = {"texts": [{"text": text} for text in texts]}
-        response = self._make_request("POST", "analyze/bulk", json_data=request_data)
+        response = self._make_request("POST", "api/v1/sentiment/analyze/bulk", json_data=request_data)
         
         try:
             data = response.json()
